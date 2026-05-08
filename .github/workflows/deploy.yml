@@ -1,0 +1,72 @@
+name: Build & Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  REGION: us-central1
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Set image tag
+        id: tag
+        run: echo "IMAGE_TAG=sha-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+
+      - name: Build and push Docker image
+        run: |
+          IMAGE="${{ env.REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.ARTIFACT_REGISTRY_REPO }}/pulse:${{ steps.tag.outputs.IMAGE_TAG }}"
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.8.0
+
+      - name: Terraform Init
+        working-directory: infra
+        run: terraform init
+
+      - name: Terraform Plan
+        working-directory: infra
+        run: |
+          terraform plan \
+            -var="project_id=${{ secrets.GCP_PROJECT_ID }}" \
+            -var="cloud_sql_instance_name=${{ secrets.CLOUD_SQL_INSTANCE_NAME }}" \
+            -var="cloud_sql_connection_name=${{ secrets.CLOUD_SQL_CONNECTION_NAME }}" \
+            -var="artifact_registry_repo=${{ secrets.ARTIFACT_REGISTRY_REPO }}" \
+            -var="image_tag=${{ steps.tag.outputs.IMAGE_TAG }}" \
+            -var="anthropic_api_key=${{ secrets.ANTHROPIC_API_KEY }}" \
+            -var="db_password=${{ secrets.PULSE_DB_PASSWORD }}" \
+            -out=tfplan
+
+      - name: Terraform Apply
+        working-directory: infra
+        run: terraform apply -auto-approve tfplan
+
+      - name: Show service URL
+        working-directory: infra
+        run: terraform output service_url
