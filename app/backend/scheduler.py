@@ -16,8 +16,15 @@ def _run_refresh_sync():
 
 
 async def _async_refresh():
+    # Imported here to avoid a circular import at module load time.
+    from database import create_engine_and_session
     from routers.articles import _run_full_refresh
-    await _run_full_refresh()
+
+    scheduler_engine, session_factory = create_engine_and_session()
+    try:
+        await _run_full_refresh(session_factory=session_factory)
+    finally:
+        await scheduler_engine.dispose()
 
 
 def start_scheduler():

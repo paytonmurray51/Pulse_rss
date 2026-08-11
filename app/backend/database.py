@@ -22,13 +22,36 @@ def _build_database_url() -> str:
 
 DATABASE_URL = _build_database_url()
 
-engine = create_async_engine(DATABASE_URL, echo=False, pool_pre_ping=True)
+# Keep the pool small. This is a single-user app, and the Cloud SQL instance
+# may be shared with other services that need their own connection headroom.
+POOL_SIZE = int(os.environ.get("DB_POOL_SIZE", "3"))
+MAX_OVERFLOW = int(os.environ.get("DB_MAX_OVERFLOW", "2"))
 
-AsyncSessionLocal = async_sessionmaker(
-    engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-)
+
+def create_engine_and_session():
+    """Build a fresh engine and its session factory.
+
+    Async connections are bound to the event loop that opened them. The
+    scheduler thread starts a new loop per run via asyncio.run(), so it must
+    not reuse the module-level engine — it calls this and disposes the result
+    when the job finishes.
+    """
+    new_engine = create_async_engine(
+        DATABASE_URL,
+        echo=False,
+        pool_pre_ping=True,
+        pool_size=POOL_SIZE,
+        max_overflow=MAX_OVERFLOW,
+    )
+    factory = async_sessionmaker(
+        new_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    return new_engine, factory
+
+
+engine, AsyncSessionLocal = create_engine_and_session()
 
 class Base(DeclarativeBase):
     pass

@@ -57,8 +57,15 @@ async def _build_feedback_context(db: AsyncSession) -> dict:
     }
 
 
-async def _run_full_refresh():
-    async with AsyncSessionLocal() as db:
+async def _run_full_refresh(session_factory=None):
+    """Fetch every active feed, score new articles, and persist the results.
+
+    Callers on the FastAPI event loop can rely on the default factory. The
+    scheduler runs on its own short-lived loop and passes a factory bound to
+    an engine it owns and disposes.
+    """
+    factory = session_factory or AsyncSessionLocal
+    async with factory() as db:
         try:
             feeds_result = await db.execute(select(Feed).where(Feed.active == True))
             feeds = feeds_result.scalars().all()
