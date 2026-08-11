@@ -15,7 +15,11 @@ FROM python:3.12-slim
 WORKDIR /app
 
 COPY app/backend/requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+# feedparser pulls in sgmllib3k, which ships as an sdist only and needs
+# setuptools to build. Python 3.12 dropped setuptools from ensurepip, so
+# install the build deps explicitly rather than relying on the base image.
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
+ && pip install --no-cache-dir -r requirements.txt
 
 COPY app/backend/ ./
 

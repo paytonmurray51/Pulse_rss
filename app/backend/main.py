@@ -1,3 +1,4 @@
+import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -10,6 +11,12 @@ from fastapi.staticfiles import StaticFiles
 from database import engine, Base
 from scheduler import start_scheduler, shutdown_scheduler
 from routers import feeds, articles, interests, blocks
+
+# Without this, refresh-pipeline logger.info() calls never reach Cloud Run.
+logging.basicConfig(
+    level=os.environ.get("LOG_LEVEL", "INFO"),
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+)
 
 
 @asynccontextmanager

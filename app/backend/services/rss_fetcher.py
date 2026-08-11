@@ -1,4 +1,5 @@
 import asyncio
+import functools
 import logging
 import re
 from datetime import datetime, timezone
@@ -10,6 +11,13 @@ import feedparser
 import httpx
 
 logger = logging.getLogger(__name__)
+
+# Some publishers reject the default python-feedparser agent outright.
+USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/120.0.0.0 Safari/537.36"
+)
 
 
 class _HTMLStripper(HTMLParser):
@@ -110,13 +118,39 @@ def _parse_entries(parsed_feed, feed_type: str) -> list[dict]:
 
 
 async def fetch_feed(feed) -> list[dict]:
+    """Fetch and parse one feed, returning [] on any failure.
+
+    feedparser does not raise on network or parse errors — it reports them via
+    the `bozo` flag and an HTTP `status`. Without checking both, a dead URL is
+    indistinguishable from a feed that simply has no new items, so every
+    failure path here logs why.
+    """
     loop = asyncio.get_event_loop()
     try:
-        parsed = await loop.run_in_executor(None, feedparser.parse, feed.url)
-        return _parse_entries(parsed, feed.feed_type)
+        parsed = await loop.run_in_executor(
+            None, functools.partial(feedparser.parse, feed.url, agent=USER_AGENT)
+        )
     except Exception as e:
-        logger.error(f"Error fetching feed {feed.url}: {e}")
+        logger.error("Feed %s (%s) raised while fetching: %s", feed.name, feed.url, e)
         return []
+
+    status = getattr(parsed, "status", None)
+    if status is not None and status >= 400:
+        logger.warning("Feed %s (%s) returned HTTP %s", feed.name, feed.url, status)
+        return []
+
+    # bozo is also set for feeds with harmless XML quirks that still parse, so
+    # only treat it as fatal when nothing came back.
+    if getattr(parsed, "bozo", False) and not parsed.entries:
+        logger.warning(
+            "Feed %s (%s) could not be parsed: %r",
+            feed.name, feed.url, getattr(parsed, "bozo_exception", None),
+        )
+        return []
+
+    entries = _parse_entries(parsed, feed.feed_type)
+    logger.info("Feed %s: %d entries fetched", feed.name, len(entries))
+    return entries
 
 
 def detect_feed_type(url: str) -> str:
