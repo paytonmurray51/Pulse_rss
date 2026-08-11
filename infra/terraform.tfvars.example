@@ -5,8 +5,10 @@
 
 project_id                = "utopian-hearth-161821"
 region                    = "us-central1"
-cloud_sql_instance_name   = "pulse-db"
-cloud_sql_connection_name = "utopian-hearth-161821:us-central1:pulse-db"
+# Existing shared instance — Terraform creates only the `pulse` database
+# and `pulse_user` on it, and never touches the other databases.
+cloud_sql_instance_name   = "mealie-db"
+cloud_sql_connection_name = "utopian-hearth-161821:us-central1:mealie-db"
 artifact_registry_repo    = "pulse"
 image_tag                 = "latest"
 refresh_interval_minutes  = 30
