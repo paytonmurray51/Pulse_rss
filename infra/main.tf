@@ -2,7 +2,7 @@ terraform {
   required_version = ">= 1.8.0"
 
   backend "gcs" {
-    bucket = "pulse-terraform-state"
+    bucket = "utopian-hearth-161821-pulse-tfstate"
     prefix = "terraform/state"
   }
 

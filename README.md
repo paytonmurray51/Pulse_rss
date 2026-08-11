@@ -40,17 +40,23 @@ A self-hosted RSS and YouTube feed reader that uses Claude Haiku to score, summa
 - GCP project with billing enabled
 - Cloud SQL PostgreSQL instance (existing)
 - Artifact Registry repository (existing, e.g. `pulse`)
-- GCS bucket for Terraform state (e.g. `pulse-terraform-state`)
+- GCS bucket for Terraform state (must be globally unique — prefix with your project ID)
 - Service account with roles: Cloud Run Admin, Cloud SQL Client, Secret Manager Admin, Artifact Registry Writer, Storage Admin
 - Anthropic API key
 
 ## One-time GCP setup
 
 ```bash
-# Create Terraform state bucket
-gsutil mb -p YOUR_PROJECT_ID -l us-central1 gs://pulse-terraform-state
-gsutil versioning set on gs://pulse-terraform-state
+export PROJECT_ID=utopian-hearth-161821
+export REGION=us-central1
+
+# Create Terraform state bucket (name must match the backend block in infra/main.tf)
+gsutil mb -p $PROJECT_ID -l $REGION gs://${PROJECT_ID}-pulse-tfstate
+gsutil versioning set on gs://${PROJECT_ID}-pulse-tfstate
 ```
+
+If you use a different bucket name, update the `backend "gcs"` block in `infra/main.tf` to match —
+Terraform backends can't read variables, so it has to be hardcoded.
 
 ## GitHub repository setup
 

@@ -3,13 +3,13 @@
 # Sensitive values (anthropic_api_key, db_password) should be passed
 # via -var flags from GitHub Secrets in CI, not stored here.
 
-project_id               = "my-gcp-project-id"
-region                   = "us-central1"
-cloud_sql_instance_name  = "my-postgres-instance"
-cloud_sql_connection_name = "my-gcp-project-id:us-central1:my-postgres-instance"
-artifact_registry_repo   = "pulse"
-image_tag                = "latest"
-refresh_interval_minutes = 30
+project_id                = "utopian-hearth-161821"
+region                    = "us-central1"
+cloud_sql_instance_name   = "pulse-db"
+cloud_sql_connection_name = "utopian-hearth-161821:us-central1:pulse-db"
+artifact_registry_repo    = "pulse"
+image_tag                 = "latest"
+refresh_interval_minutes  = 30
 
 # Set via -var in CI from GitHub Secrets:
 # anthropic_api_key = "sk-ant-..."
