@@ -37,7 +37,7 @@ export function BottomNav() {
 
 export function Sidebar() {
   return (
-    <aside className="hidden sm:flex flex-col w-14 shrink-0 sticky top-0 h-screen
+    <aside className="hidden sm:flex flex-col w-16 shrink-0 sticky top-0 h-screen
                       bg-bg-surface border-r border-bg-border pt-16 pb-4 gap-1 items-center">
       {LINKS.map((l) => (
         <NavLink
@@ -47,7 +47,7 @@ export function Sidebar() {
           title={l.label}
           className={({ isActive }) =>
             `flex flex-col items-center gap-1 p-2 rounded-lg text-xs transition-colors
-             ${isActive ? 'text-amber-pulse' : 'text-gray-500 hover:text-gray-300 hover:bg-bg-elevated'}`
+             ${isActive ? 'text-accent' : 'text-gray-500 hover:text-gray-300 hover:bg-bg-elevated'}`
           }
         >
           <l.icon className="w-5 h-5" />

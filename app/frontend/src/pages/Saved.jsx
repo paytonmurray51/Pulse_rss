@@ -45,9 +45,9 @@ export default function Saved() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto px-3 py-4">
+    <div className="max-w-6xl mx-auto px-4 py-4">
       <div className="flex items-center gap-2 mb-4">
-        <Bookmark className="w-5 h-5 text-amber-pulse" />
+        <Bookmark className="w-5 h-5 text-accent" />
         <h1 className="font-display text-xl font-semibold text-white">Saved</h1>
         {data && (
           <span className="ml-1 text-sm text-gray-400">({data.total})</span>
@@ -63,7 +63,7 @@ export default function Saved() {
           <p className="text-sm mt-1">Bookmark articles from your feed to read later</p>
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {data?.items?.map((article) => (
             <ArticleCard
               key={article.id}

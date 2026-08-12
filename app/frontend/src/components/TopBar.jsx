@@ -24,7 +24,7 @@ export default function TopBar({ stats, onRefreshed }) {
                        bg-bg-base/80 backdrop-blur border-b border-bg-border">
       {/* Logo */}
       <div className="flex items-center gap-2 shrink-0">
-        <Zap className="w-5 h-5 text-amber-pulse" />
+        <Zap className="w-5 h-5 text-accent" />
         <span className="font-display text-lg font-semibold text-white">Pulse</span>
       </div>
 

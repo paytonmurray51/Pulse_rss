@@ -38,7 +38,7 @@
            transition-colors hover:text-gray-300 cursor-pointer px-2;
   }
   .nav-item.active {
-    @apply text-amber-pulse;
+    @apply text-accent;
   }
   .btn-ghost {
     @apply p-1.5 rounded-lg text-gray-500 hover:text-gray-300 hover:bg-bg-elevated
@@ -51,12 +51,12 @@
   .input-field {
     @apply w-full bg-bg-elevated border border-bg-border rounded-lg px-3 py-2
            text-sm text-gray-100 placeholder-gray-600
-           focus:outline-none focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/20
+           focus:outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/20
            transition-colors;
   }
   .btn-primary {
-    @apply px-4 py-2 rounded-lg bg-amber-500 text-gray-900 font-semibold text-sm
-           hover:bg-amber-400 active:bg-amber-600 transition-colors;
+    @apply px-4 py-2 rounded-lg bg-accent text-bg-base font-semibold text-sm
+           hover:bg-accent-hover active:bg-accent-press transition-colors;
   }
   .btn-secondary {
     @apply px-4 py-2 rounded-lg bg-bg-elevated border border-bg-border text-gray-300

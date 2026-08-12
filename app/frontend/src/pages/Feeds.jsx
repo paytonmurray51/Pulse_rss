@@ -109,7 +109,7 @@ function FeedRow({ feed, onToggle, onDelete }) {
       {isYoutube ? (
         <Tv2 className="w-5 h-5 text-red-500 shrink-0" />
       ) : (
-        <Rss className="w-5 h-5 text-amber-500/70 shrink-0" />
+        <Rss className="w-5 h-5 text-accent/70 shrink-0" />
       )}
 
       <div className="flex-1 min-w-0">
@@ -135,7 +135,7 @@ function FeedRow({ feed, onToggle, onDelete }) {
           title={feed.active ? 'Disable' : 'Enable'}
         >
           {feed.active
-            ? <ToggleRight className="w-5 h-5 text-amber-pulse" />
+            ? <ToggleRight className="w-5 h-5 text-accent" />
             : <ToggleLeft className="w-5 h-5 text-gray-600" />}
         </button>
         <button
@@ -195,10 +195,10 @@ export default function Feeds() {
   }, {})
 
   return (
-    <div className="max-w-3xl mx-auto px-3 py-4">
+    <div className="max-w-6xl mx-auto px-4 py-4">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <Rss className="w-5 h-5 text-amber-pulse" />
+          <Rss className="w-5 h-5 text-accent" />
           <h1 className="font-display text-xl font-semibold text-white">Sources</h1>
           <span className="text-sm text-gray-400">({feeds.length})</span>
         </div>

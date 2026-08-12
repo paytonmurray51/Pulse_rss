@@ -1,18 +1,27 @@
 /** @type {import('tailwindcss').Config} */
+
+// Monochrome theme. All interface chrome is greyscale so the score rings —
+// the only saturated colour in the UI — carry the ranking signal.
+// Swapping themes means changing `accent` and the `bg` ramp; nothing else
+// in the components references a colour directly.
 export default {
   content: ['./index.html', './src/**/*.{js,jsx,ts,tsx}'],
   theme: {
     extend: {
       colors: {
         bg: {
-          base: '#07070f',
-          surface: '#0f0f1c',
-          elevated: '#161628',
-          border: '#1e1e35',
+          base: '#0a0a0a',
+          surface: '#141414',
+          elevated: '#1e1e1e',
+          border: '#2a2a2a',
         },
-        amber: {
-          pulse: '#f59e0b',
+        accent: {
+          DEFAULT: '#e5e5e5',
+          hover: '#ffffff',
+          press: '#a3a3a3',
+          dim: '#8a8a8a',
         },
+        // Semantic, deliberately kept saturated in every theme.
         score: {
           high: '#10b981',
           mid: '#f59e0b',
@@ -27,7 +36,7 @@ export default {
         'fade-in': 'fadeIn 0.3s ease-out',
         'slide-up': 'slideUp 0.4s cubic-bezier(0.16,1,0.3,1)',
         'pulse-dot': 'pulseDot 1.5s ease-in-out infinite',
-        'spin': 'spin 1s linear infinite',
+        spin: 'spin 1s linear infinite',
       },
       keyframes: {
         fadeIn: {

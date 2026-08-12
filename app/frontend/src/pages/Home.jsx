@@ -72,24 +72,27 @@ export default function Home() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto px-3 py-4">
-      {/* Filter bar */}
-      <div className="sticky top-[57px] z-20 flex items-center gap-2 py-2
-                     bg-bg-base/90 backdrop-blur mb-4 -mx-3 px-3">
+    <div className="max-w-6xl mx-auto px-4 py-4">
+      {/* Filter bar. `top-0`, not an offset for the TopBar: <main> is the
+          scrolling container and the TopBar sits outside it, so a non-zero
+          offset would leave a gap that article cards scroll through. */}
+      <div className="sticky top-0 z-20 flex items-center gap-2 py-2
+                     bg-bg-base/95 backdrop-blur border-b border-bg-border
+                     mb-4 -mx-4 px-4">
         <button
-          onClick={() => handleFilterChange(!unreadOnly, undefined)}
+          onClick={() => handleFilterChange(false, undefined)}
           className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors
             ${!unreadOnly
-              ? 'bg-amber-500/20 text-amber-pulse border border-amber-500/30'
+              ? 'bg-accent/20 text-accent border border-accent/30'
               : 'text-gray-400 hover:text-gray-200'}`}
         >
           All
         </button>
         <button
-          onClick={() => handleFilterChange(!unreadOnly, undefined)}
+          onClick={() => handleFilterChange(true, undefined)}
           className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors
             ${unreadOnly
-              ? 'bg-amber-500/20 text-amber-pulse border border-amber-500/30'
+              ? 'bg-accent/20 text-accent border border-accent/30'
               : 'text-gray-400 hover:text-gray-200'}`}
         >
           Unread
@@ -111,7 +114,7 @@ export default function Home() {
 
       {/* Article list */}
       {isLoading ? (
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} />)}
         </div>
       ) : data?.items?.length === 0 ? (
@@ -120,7 +123,7 @@ export default function Home() {
           <p className="text-sm mt-2">Add a feed and click Refresh to get started</p>
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {data?.items?.map((article) => (
             <ArticleCard
               key={article.id}

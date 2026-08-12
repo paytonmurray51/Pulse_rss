@@ -73,7 +73,7 @@ export default function Settings() {
   return (
     <div className="max-w-2xl mx-auto px-4 py-4 space-y-8 pb-8">
       <div className="flex items-center gap-2">
-        <SettingsIcon className="w-5 h-5 text-amber-pulse" />
+        <SettingsIcon className="w-5 h-5 text-accent" />
         <h1 className="font-display text-xl font-semibold text-white">Settings</h1>
       </div>
 
@@ -90,12 +90,12 @@ export default function Settings() {
             <span
               key={i}
               className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm
-                         bg-amber-500/15 text-amber-pulse border border-amber-500/25"
+                         bg-accent/15 text-accent border border-accent/25"
             >
               {interest}
               <button
                 onClick={() => removeInterest(i)}
-                className="text-amber-400/60 hover:text-amber-300 transition-colors"
+                className="text-accent/60 hover:text-accent-hover transition-colors"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -132,7 +132,7 @@ export default function Settings() {
               <button
                 key={s}
                 onClick={() => addInterest(s)}
-                className="tag-pill hover:border-amber-500/30 hover:text-gray-300 transition-colors cursor-pointer"
+                className="tag-pill hover:border-accent/30 hover:text-gray-300 transition-colors cursor-pointer"
               >
                 + {s}
               </button>
@@ -155,9 +155,9 @@ export default function Settings() {
             step={0.5}
             value={threshold}
             onChange={(e) => setThreshold(parseFloat(e.target.value))}
-            className="flex-1 accent-amber-500"
+            className="flex-1 accent-accent"
           />
-          <span className="text-amber-pulse font-semibold w-10 text-right tabular-nums">
+          <span className="text-accent font-semibold w-10 text-right tabular-nums">
             {threshold.toFixed(1)}
           </span>
         </div>
@@ -174,9 +174,9 @@ export default function Settings() {
             step={5}
             value={interval}
             onChange={(e) => setInterval(parseInt(e.target.value, 10))}
-            className="flex-1 accent-amber-500"
+            className="flex-1 accent-accent"
           />
-          <span className="text-amber-pulse font-semibold w-20 text-right tabular-nums">
+          <span className="text-accent font-semibold w-20 text-right tabular-nums">
             {interval}m
           </span>
         </div>

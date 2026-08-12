@@ -186,7 +186,7 @@ export default function ArticleCard({ article, onUpdate, onRemove }) {
               {isYoutube ? (
                 <Tv2 className="w-3.5 h-3.5 text-red-500 shrink-0" />
               ) : (
-                <Rss className="w-3.5 h-3.5 text-amber-500/70 shrink-0" />
+                <Rss className="w-3.5 h-3.5 text-accent/70 shrink-0" />
               )}
               <span className="truncate">{article.feed_name}</span>
               {timeAgo && <span className="shrink-0">· {timeAgo}</span>}
@@ -240,11 +240,11 @@ export default function ArticleCard({ article, onUpdate, onRemove }) {
             </button>
             <button
               onClick={handleReadLater}
-              className={`btn-ghost ${article.read_later ? 'text-amber-pulse' : ''}`}
+              className={`btn-ghost ${article.read_later ? 'text-accent' : ''}`}
               title={article.read_later ? 'Remove from saved' : 'Save for later'}
             >
               {article.read_later
-                ? <BookmarkCheck className="w-4 h-4 fill-amber-pulse" />
+                ? <BookmarkCheck className="w-4 h-4 fill-accent" />
                 : <Bookmark className="w-4 h-4" />}
             </button>
             <button
