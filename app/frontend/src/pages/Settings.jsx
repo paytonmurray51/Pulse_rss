@@ -2,6 +2,16 @@ import { useState, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getProfile, updateProfile, getBlocks, deleteBlock } from '../lib/api'
 import { X, Check, Settings as SettingsIcon } from 'lucide-react'
+import { formatDistanceToNow } from '../lib/dateUtils'
+
+const REFRESH_OPTIONS = [
+  { minutes: 60, label: 'Every hour' },
+  { minutes: 360, label: 'Every 6 hours' },
+  { minutes: 720, label: 'Twice a day' },
+  { minutes: 1440, label: 'Once a day' },
+  { minutes: 2880, label: 'Every 2 days' },
+  { minutes: 10080, label: 'Once a week' },
+]
 
 const SUGGESTIONS = [
   'SRE', 'DevOps', 'Kubernetes', 'Terraform', 'GCP', 'Python',
@@ -21,13 +31,15 @@ export default function Settings() {
   const [interests, setInterests] = useState([])
   const [inputVal, setInputVal] = useState('')
   const [threshold, setThreshold] = useState(5.0)
-  const [interval, setInterval] = useState(30)
+  const [interval, setInterval] = useState(1440)
+  const [autoRefresh, setAutoRefresh] = useState(true)
 
   useEffect(() => {
     if (profile) {
       setInterests(profile.interests || [])
       setThreshold(profile.min_score_threshold ?? 5.0)
-      setInterval(profile.refresh_interval_minutes ?? 30)
+      setInterval(profile.refresh_interval_minutes ?? 1440)
+      setAutoRefresh(profile.auto_refresh_enabled ?? true)
     }
   }, [profile])
 
@@ -46,7 +58,12 @@ export default function Settings() {
   const handleSave = async () => {
     setSaving(true)
     try {
-      await updateProfile({ interests, min_score_threshold: threshold, refresh_interval_minutes: interval })
+      await updateProfile({
+        interests,
+        min_score_threshold: threshold,
+        refresh_interval_minutes: interval,
+        auto_refresh_enabled: autoRefresh,
+      })
       queryClient.invalidateQueries({ queryKey: ['profile'] })
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
@@ -163,23 +180,49 @@ export default function Settings() {
         </div>
       </section>
 
-      {/* Refresh interval */}
+      {/* Automatic refresh */}
       <section className="space-y-3">
-        <h2 className="text-sm font-semibold text-gray-300">Refresh Interval</h2>
-        <div className="flex items-center gap-4">
-          <input
-            type="range"
-            min={5}
-            max={180}
-            step={5}
-            value={interval}
-            onChange={(e) => setInterval(parseInt(e.target.value, 10))}
-            className="flex-1 accent-accent"
-          />
-          <span className="text-accent font-semibold w-20 text-right tabular-nums">
-            {interval}m
-          </span>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-300">Automatic Refresh</h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Manual refresh always works, whether this is on or off.
+            </p>
+          </div>
+          <button
+            onClick={() => setAutoRefresh(!autoRefresh)}
+            role="switch"
+            aria-checked={autoRefresh}
+            className={`relative w-11 h-6 rounded-full shrink-0 transition-colors
+              ${autoRefresh ? 'bg-accent' : 'bg-bg-elevated border border-bg-border'}`}
+          >
+            <span
+              className={`absolute top-1 w-4 h-4 rounded-full transition-transform
+                ${autoRefresh ? 'translate-x-6 bg-bg-base' : 'translate-x-1 bg-gray-500'}`}
+            />
+          </button>
         </div>
+
+        {autoRefresh && (
+          <div className="space-y-2">
+            <label className="block text-xs text-gray-400">How often</label>
+            <select
+              className="input-field"
+              value={interval}
+              onChange={(e) => setInterval(parseInt(e.target.value, 10))}
+            >
+              {REFRESH_OPTIONS.map((o) => (
+                <option key={o.minutes} value={o.minutes}>{o.label}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        <p className="text-xs text-gray-500">
+          {profile?.last_auto_refresh_at
+            ? `Last refreshed ${formatDistanceToNow(new Date(profile.last_auto_refresh_at))}.`
+            : 'No refresh recorded yet.'}
+        </p>
       </section>
 
       {/* Active blocks */}

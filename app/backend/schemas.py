@@ -68,6 +68,8 @@ class UserProfileOut(BaseModel):
     interests: Optional[List[str]] = None
     min_score_threshold: float
     refresh_interval_minutes: int
+    auto_refresh_enabled: bool = True
+    last_auto_refresh_at: Optional[datetime] = None
     updated_at: datetime
 
     model_config = {"from_attributes": True}
@@ -77,6 +79,7 @@ class UserProfileUpdate(BaseModel):
     interests: Optional[List[str]] = None
     min_score_threshold: Optional[float] = None
     refresh_interval_minutes: Optional[int] = None
+    auto_refresh_enabled: Optional[bool] = None
 
 
 # Deep summary schema

@@ -112,6 +112,12 @@ async def _run_full_refresh(session_factory=None):
                     db.add(article)
                     new_articles.append(article)
 
+            # Stamped here rather than at the end so that a run finding nothing
+            # still resets the clock — otherwise every tick would re-fetch all
+            # feeds until something new appeared.
+            if profile:
+                profile.last_auto_refresh_at = datetime.now(timezone.utc)
+
             await db.commit()
 
             if not new_articles:

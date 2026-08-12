@@ -82,7 +82,13 @@ class UserProfile(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     interests: Mapped[Optional[List[str]]] = mapped_column(ARRAY(String), nullable=True, default=list)
     min_score_threshold: Mapped[float] = mapped_column(Float, default=5.0, nullable=False)
-    refresh_interval_minutes: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
+    # 1440 = once a day. The scheduler reads this from the database on every
+    # tick, so changes take effect without a redeploy.
+    refresh_interval_minutes: Mapped[int] = mapped_column(Integer, default=1440, nullable=False)
+    auto_refresh_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    last_auto_refresh_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )

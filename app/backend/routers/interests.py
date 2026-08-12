@@ -14,7 +14,8 @@ async def get_interests(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(UserProfile).where(UserProfile.id == 1))
     profile = result.scalar_one_or_none()
     if not profile:
-        profile = UserProfile(id=1, interests=[], min_score_threshold=5.0, refresh_interval_minutes=30)
+        profile = UserProfile(id=1, interests=[], min_score_threshold=5.0,
+                              refresh_interval_minutes=1440, auto_refresh_enabled=True)
         db.add(profile)
         await db.commit()
         await db.refresh(profile)
@@ -29,7 +30,8 @@ async def update_interests(
     result = await db.execute(select(UserProfile).where(UserProfile.id == 1))
     profile = result.scalar_one_or_none()
     if not profile:
-        profile = UserProfile(id=1, interests=[], min_score_threshold=5.0, refresh_interval_minutes=30)
+        profile = UserProfile(id=1, interests=[], min_score_threshold=5.0,
+                              refresh_interval_minutes=1440, auto_refresh_enabled=True)
         db.add(profile)
 
     if payload.interests is not None:
@@ -38,6 +40,8 @@ async def update_interests(
         profile.min_score_threshold = payload.min_score_threshold
     if payload.refresh_interval_minutes is not None:
         profile.refresh_interval_minutes = payload.refresh_interval_minutes
+    if payload.auto_refresh_enabled is not None:
+        profile.auto_refresh_enabled = payload.auto_refresh_enabled
 
     await db.commit()
     await db.refresh(profile)

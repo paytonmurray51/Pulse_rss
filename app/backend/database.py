@@ -58,18 +58,54 @@ class Base(DeclarativeBase):
 
 
 # create_all() creates missing tables but never alters existing ones, so
-# columns added after a deploy have to be applied by hand. These are written
-# to be safe to run on every startup.
-_MIGRATIONS = (
-    "ALTER TABLE articles ADD COLUMN IF NOT EXISTS ai_full_summary TEXT",
-    "ALTER TABLE articles ADD COLUMN IF NOT EXISTS ai_full_summary_at TIMESTAMPTZ",
+# schema changes after a deploy have to be applied here. Each migration runs
+# at most once — tracked in schema_migrations — which lets a step contain a
+# one-shot data change that must not be reapplied on every boot.
+_MIGRATIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        "001_article_full_summary",
+        (
+            "ALTER TABLE articles ADD COLUMN IF NOT EXISTS ai_full_summary TEXT",
+            "ALTER TABLE articles ADD COLUMN IF NOT EXISTS ai_full_summary_at TIMESTAMPTZ",
+        ),
+    ),
+    (
+        "002_daily_auto_refresh",
+        (
+            "ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS "
+            "auto_refresh_enabled BOOLEAN NOT NULL DEFAULT TRUE",
+            "ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS "
+            "last_auto_refresh_at TIMESTAMPTZ",
+            # Move existing installs off the old 30-minute cadence. Guarded by
+            # the migration ledger so a later manual change is never undone.
+            "UPDATE user_profiles SET refresh_interval_minutes = 1440 "
+            "WHERE refresh_interval_minutes < 1440",
+        ),
+    ),
 )
 
 
 async def run_migrations(conn):
     from sqlalchemy import text
-    for statement in _MIGRATIONS:
-        await conn.execute(text(statement))
+
+    await conn.execute(text(
+        "CREATE TABLE IF NOT EXISTS schema_migrations ("
+        "  name TEXT PRIMARY KEY,"
+        "  applied_at TIMESTAMPTZ NOT NULL DEFAULT now()"
+        ")"
+    ))
+    applied = set(
+        (await conn.execute(text("SELECT name FROM schema_migrations"))).scalars().all()
+    )
+
+    for name, statements in _MIGRATIONS:
+        if name in applied:
+            continue
+        for statement in statements:
+            await conn.execute(text(statement))
+        await conn.execute(
+            text("INSERT INTO schema_migrations (name) VALUES (:n)"), {"n": name}
+        )
 
 
 async def get_db():
