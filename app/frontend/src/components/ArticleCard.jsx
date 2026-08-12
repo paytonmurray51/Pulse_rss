@@ -1,8 +1,75 @@
 import { useState } from 'react'
-import { ThumbsUp, ThumbsDown, Bookmark, BookmarkCheck, ExternalLink, Ban, Tv2, Rss, Play } from 'lucide-react'
+import {
+  ThumbsUp, ThumbsDown, Bookmark, BookmarkCheck, ExternalLink, Ban,
+  Tv2, Rss, Play, Sparkles, Check, AlertCircle,
+} from 'lucide-react'
 import ScoreBadge from './ScoreBadge'
-import { toggleReadLater, markRead, setFeedback, createBlock } from '../lib/api'
+import { toggleReadLater, markRead, setFeedback, createBlock, summarizeArticle } from '../lib/api'
 import { formatDistanceToNow } from '../lib/dateUtils'
+
+// ─── Deep summary panel ──────────────────────────────────────────────────────
+
+function SummaryPanel({ state, summary, error }) {
+  if (state === 'loading') {
+    return (
+      <div className="border-t border-bg-border bg-bg-base p-3">
+        <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider
+                        text-gray-500 mb-2.5 animate-pulse-dot">
+          <Sparkles className="w-3.5 h-3.5" />
+          Reading article…
+        </div>
+        {['92%', '78%', '85%', '60%'].map((w) => (
+          <div key={w} className="h-2 bg-bg-elevated rounded mb-2 animate-pulse-dot" style={{ width: w }} />
+        ))}
+      </div>
+    )
+  }
+
+  if (state === 'error') {
+    return (
+      <div className="border-t border-bg-border bg-bg-base p-3">
+        <div className="flex items-start gap-2 text-xs text-gray-400">
+          <AlertCircle className="w-4 h-4 text-score-low shrink-0 mt-0.5" />
+          <span>{error}</span>
+        </div>
+      </div>
+    )
+  }
+
+  if (state !== 'done' || !summary) return null
+
+  return (
+    <div className="border-t border-bg-border bg-bg-base p-3 animate-fade-in">
+      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-gray-500 mb-2.5">
+        <Sparkles className="w-3.5 h-3.5" />
+        Full summary
+      </div>
+
+      {summary.key_points.map((point, i) => (
+        <div key={i} className="flex gap-2 text-xs leading-relaxed mb-1.5 text-gray-200">
+          <span className="text-accent font-semibold shrink-0">{i + 1}.</span>
+          <span>{point}</span>
+        </div>
+      ))}
+
+      {summary.why_it_matters && (
+        <p className="border-l-2 border-bg-border pl-2.5 mt-2.5 text-xs italic
+                      text-gray-400 leading-relaxed">
+          {summary.why_it_matters}
+        </p>
+      )}
+
+      <div className="flex items-center justify-between mt-2.5 pt-2 border-t border-bg-border
+                      text-[10px] text-gray-500">
+        <span className="inline-flex items-center gap-1">
+          <Check className="w-3 h-3" />
+          {summary.cached ? 'Cached' : 'Generated just now'}
+        </span>
+        {summary.reading_time_min && <span>~{summary.reading_time_min} min read saved</span>}
+      </div>
+    </div>
+  )
+}
 
 // ─── Block menu modal ────────────────────────────────────────────────────────
 
@@ -94,8 +161,34 @@ function BlockMenu({ article, onClose, onBlocked }) {
 export default function ArticleCard({ article, onUpdate, onRemove }) {
   const [showBlock, setShowBlock] = useState(false)
   const [fading, setFading] = useState(false)
+  const [sumState, setSumState] = useState('idle') // idle | loading | done | error
+  const [summary, setSummary] = useState(null)
+  const [sumError, setSumError] = useState('')
 
   const isYoutube = article.feed_type === 'youtube'
+
+  const handleSummarize = async (e) => {
+    e.stopPropagation()
+    if (sumState === 'loading') return
+    // Collapse without discarding the fetched summary, so reopening is free.
+    if (sumState === 'done' || sumState === 'error') {
+      setSumState('idle')
+      return
+    }
+    if (summary) {
+      setSumState('done')
+      return
+    }
+    setSumState('loading')
+    try {
+      const result = await summarizeArticle(article.id)
+      setSummary(result)
+      setSumState('done')
+    } catch (err) {
+      setSumError(err.message || 'Could not summarize this article.')
+      setSumState('error')
+    }
+  }
 
   const handleOpen = async () => {
     try {
@@ -217,6 +310,24 @@ export default function ArticleCard({ article, onUpdate, onRemove }) {
 
           {/* Actions */}
           <div className="flex items-center justify-end gap-1 pt-1" onClick={(e) => e.stopPropagation()}>
+            {/* Videos have no transcript to read, so the button is hidden there. */}
+            {!isYoutube && (
+              <button
+                onClick={handleSummarize}
+                disabled={sumState === 'loading'}
+                className={`flex items-center gap-1.5 px-2.5 h-[27px] rounded-lg text-xs font-semibold
+                            transition-colors mr-auto
+                            ${sumState === 'done' || sumState === 'error'
+                              ? 'text-gray-400 hover:text-gray-200'
+                              : 'text-accent bg-accent/10 hover:bg-accent/20'}`}
+                title="Summarize with AI"
+              >
+                <Sparkles className={`w-3.5 h-3.5 ${sumState === 'loading' ? 'animate-pulse-dot' : ''}`} />
+                {sumState === 'loading' ? 'Summarizing…'
+                  : sumState === 'done' || sumState === 'error' ? 'Hide'
+                  : 'Summarize'}
+              </button>
+            )}
             <button
               onClick={handleLike}
               className={`btn-ghost ${article.user_rating === 'liked' ? 'text-green-400' : ''}`}
@@ -255,6 +366,10 @@ export default function ArticleCard({ article, onUpdate, onRemove }) {
               <ExternalLink className="w-4 h-4" />
             </button>
           </div>
+        </div>
+
+        <div onClick={(e) => e.stopPropagation()}>
+          <SummaryPanel state={sumState} summary={summary} error={sumError} />
         </div>
       </article>
 

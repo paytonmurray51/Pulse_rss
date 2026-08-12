@@ -46,6 +46,13 @@ class Article(Base):
     ai_filter_reason: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     ai_processed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    # On-demand deep summary: JSON blob produced from the article body, not
+    # the feed excerpt. Cached so a given article is only ever paid for once.
+    ai_full_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    ai_full_summary_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     read_later: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_read: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     open_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

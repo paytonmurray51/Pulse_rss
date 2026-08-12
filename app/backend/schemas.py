@@ -79,6 +79,16 @@ class UserProfileUpdate(BaseModel):
     refresh_interval_minutes: Optional[int] = None
 
 
+# Deep summary schema
+class SummaryOut(BaseModel):
+    article_id: int
+    key_points: List[str]
+    why_it_matters: Optional[str] = None
+    reading_time_min: Optional[int] = None
+    cached: bool = False
+    generated_at: Optional[datetime] = None
+
+
 # Stats schema
 class StatsOut(BaseModel):
     total_articles: int

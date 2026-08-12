@@ -1,3 +1,4 @@
+import json
 import logging
 from datetime import datetime, timezone
 
@@ -8,8 +9,9 @@ from sqlalchemy.orm import selectinload
 
 from database import AsyncSessionLocal, get_db
 from models import Article, Feed, FeedbackBlock, UserProfile
-from schemas import ArticleListResponse, ArticleOut, StatsOut
-from services.claude_service import process_new_articles
+from schemas import ArticleListResponse, ArticleOut, StatsOut, SummaryOut
+from services.article_reader import ArticleUnreadable, fetch_article_text
+from services.claude_service import process_new_articles, summarize_article
 from services.rss_fetcher import fetch_feed
 
 logger = logging.getLogger(__name__)
@@ -165,6 +167,8 @@ async def list_articles(
     read_later: bool | None = None,
     unread_only: bool = False,
     show_filtered: bool = False,
+    min_score: float | None = Query(None, ge=0, le=10),
+    sort: str = Query("score", pattern="^(score|newest)$"),
     db: AsyncSession = Depends(get_db),
 ):
     query = (
@@ -186,16 +190,25 @@ async def list_articles(
     if unread_only:
         query = query.where(Article.is_read == False)
 
+    # Fall back to the saved profile threshold when the caller does not send
+    # one, so the Settings slider actually governs the default feed.
+    if min_score is None:
+        profile_result = await db.execute(select(UserProfile).where(UserProfile.id == 1))
+        profile = profile_result.scalar_one_or_none()
+        min_score = profile.min_score_threshold if profile else None
+    if min_score:
+        query = query.where(Article.ai_score >= min_score)
+
     count_query = select(func.count()).select_from(query.subquery())
     total_result = await db.execute(count_query)
     total = total_result.scalar_one()
 
-    query = (
-        query
-        .order_by(Article.ai_score.desc().nulls_last(), Article.published_at.desc())
-        .offset((page - 1) * per_page)
-        .limit(per_page)
-    )
+    if sort == "newest":
+        order = (Article.published_at.desc().nulls_last(), Article.ai_score.desc())
+    else:
+        order = (Article.ai_score.desc().nulls_last(), Article.published_at.desc())
+
+    query = query.order_by(*order).offset((page - 1) * per_page).limit(per_page)
 
     result = await db.execute(query)
     articles = result.scalars().all()
@@ -266,6 +279,75 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
         active_feeds=active_feeds_result.scalar_one(),
         avg_score=avg_score,
         articles_today=today_result.scalar_one(),
+    )
+
+
+@router.post("/{article_id}/summarize", response_model=SummaryOut)
+async def summarize(
+    article_id: int,
+    refresh: bool = Query(False, description="Regenerate even if a summary is cached"),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Article).where(Article.id == article_id).options(selectinload(Article.feed))
+    )
+    article = result.scalar_one_or_none()
+    if not article:
+        raise HTTPException(status_code=404, detail="Article not found")
+
+    # Serve the cache first — a given article should only ever be paid for once.
+    if article.ai_full_summary and not refresh:
+        try:
+            cached = json.loads(article.ai_full_summary)
+            return SummaryOut(
+                article_id=article.id,
+                key_points=cached.get("key_points", []),
+                why_it_matters=cached.get("why_it_matters"),
+                reading_time_min=cached.get("reading_time_min"),
+                cached=True,
+                generated_at=article.ai_full_summary_at,
+            )
+        except (ValueError, TypeError):
+            logger.warning("Discarding malformed cached summary for article %s", article.id)
+
+    if article.feed and article.feed.feed_type == "youtube":
+        raise HTTPException(
+            status_code=422,
+            detail="Videos can't be summarized — there's no transcript to read.",
+        )
+
+    try:
+        text, word_count = await fetch_article_text(article.url)
+    except ArticleUnreadable as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    profile_result = await db.execute(select(UserProfile).where(UserProfile.id == 1))
+    profile = profile_result.scalar_one_or_none()
+    interests = profile.interests if profile and profile.interests else []
+
+    try:
+        summary = await summarize_article(article.title, text, interests)
+    except Exception as e:
+        logger.error("Summarization failed for article %s: %s", article.id, e)
+        raise HTTPException(
+            status_code=502,
+            detail="The summarizer failed on this article. Try again in a moment.",
+        )
+
+    # Computed here rather than asked of the model, which guesses badly at it.
+    summary["reading_time_min"] = max(1, round(word_count / 200))
+
+    article.ai_full_summary = json.dumps(summary)
+    article.ai_full_summary_at = datetime.now(timezone.utc)
+    await db.commit()
+
+    return SummaryOut(
+        article_id=article.id,
+        key_points=summary["key_points"],
+        why_it_matters=summary.get("why_it_matters"),
+        reading_time_min=summary["reading_time_min"],
+        cached=False,
+        generated_at=article.ai_full_summary_at,
     )
 
 

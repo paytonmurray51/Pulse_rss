@@ -26,6 +26,57 @@ Example output format:
 [{"index":0,"relevance_score":8.5,"quality_score":7.0,"combined_score":7.9,"filter":false,"filter_reason":null,"summary":"Article about X.","tags":["tag1","tag2"]}]"""
 
 
+SUMMARY_SYSTEM_PROMPT = """You summarize articles for a reader who wants the substance without opening the page.
+
+Respond ONLY with a valid JSON object — no markdown, no code fences, no preamble.
+
+Fields:
+- key_points (array of 3-5 strings): the article's substantive claims. Each a full
+  sentence carrying actual information — specific findings, numbers, arguments.
+  Never write meta-descriptions like "the article discusses X".
+- why_it_matters (string): one sentence connecting the article to the reader's
+  stated interests. If it does not relate to them, say plainly what it is useful for.
+
+Base every statement on the supplied text. If the text looks truncated or is
+mostly navigation boilerplate, say so in key_points rather than inventing content.
+
+Example:
+{"key_points":["Go's explicit error handling makes generated code easier to review.","Roughly a third of new Go at Google is now model-generated."],"why_it_matters":"Relevant if you run Go services and are weighing AI-assisted work."}"""
+
+
+async def summarize_article(title: str, text: str, interests: list[str]) -> dict:
+    """Produce a structured deep summary of one article's body text."""
+    interests_str = ", ".join(interests) if interests else "general technology"
+
+    user_message = (
+        f"Reader's interests: {interests_str}\n\n"
+        f"Article title: {title}\n\n"
+        f"Article text:\n{text}\n\n"
+        "Respond with ONLY the JSON object."
+    )
+
+    response = _client.messages.create(
+        model="claude-haiku-4-5",
+        max_tokens=1200,
+        system=SUMMARY_SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": user_message}],
+    )
+
+    raw = response.content[0].text.strip()
+    raw = re.sub(r"^```[a-z]*\n?", "", raw)
+    raw = re.sub(r"\n?```$", "", raw).strip()
+
+    parsed = json.loads(raw)
+    points = [p for p in parsed.get("key_points", []) if isinstance(p, str) and p.strip()]
+    if not points:
+        raise ValueError("Model returned no usable key points")
+
+    return {
+        "key_points": points,
+        "why_it_matters": parsed.get("why_it_matters") or None,
+    }
+
+
 def _build_feedback_section(feedback_ctx: dict) -> str:
     lines = []
 

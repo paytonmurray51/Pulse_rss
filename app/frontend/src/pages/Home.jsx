@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { getArticles, getFeeds } from '../lib/api'
+import { getArticles, getFeeds, getProfile } from '../lib/api'
 import ArticleCard from '../components/ArticleCard'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 
@@ -19,22 +19,44 @@ function Skeleton() {
   )
 }
 
+const VIEWS = [
+  { key: 'all', label: 'All' },
+  { key: 'unread', label: 'Unread' },
+  { key: 'saved', label: 'Saved' },
+]
+
 export default function Home() {
   const [page, setPage] = useState(1)
-  const [unreadOnly, setUnreadOnly] = useState(false)
+  const [view, setView] = useState('all')
   const [feedId, setFeedId] = useState('')
+  const [sort, setSort] = useState('score')
+  const [minScore, setMinScore] = useState(null)
   const queryClient = useQueryClient()
+
+  const { data: profile } = useQuery({ queryKey: ['profile'], queryFn: getProfile })
+
+  // Seed the slider from the saved threshold once, then let it be overridden
+  // locally without writing back to the profile.
+  useEffect(() => {
+    if (profile && minScore === null) {
+      setMinScore(profile.min_score_threshold ?? 5.0)
+    }
+  }, [profile, minScore])
 
   const params = {
     page,
     per_page: 20,
-    unread_only: unreadOnly || undefined,
+    unread_only: view === 'unread' || undefined,
+    read_later: view === 'saved' || undefined,
     feed_id: feedId || undefined,
+    sort,
+    min_score: minScore ?? undefined,
   }
 
   const { data, isLoading } = useQuery({
     queryKey: ['articles', params],
     queryFn: () => getArticles(params),
+    enabled: minScore !== null,
   })
 
   const { data: feeds } = useQuery({
@@ -65,11 +87,8 @@ export default function Home() {
     })
   }
 
-  const handleFilterChange = (newUnread, newFeedId) => {
-    setPage(1)
-    if (newUnread !== undefined) setUnreadOnly(newUnread)
-    if (newFeedId !== undefined) setFeedId(newFeedId)
-  }
+  // Any filter change invalidates the current page number.
+  const reset = (fn) => (value) => { setPage(1); fn(value) }
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-4">
@@ -79,29 +98,54 @@ export default function Home() {
       <div className="sticky top-0 z-20 flex items-center gap-2 py-2
                      bg-bg-base/95 backdrop-blur border-b border-bg-border
                      mb-4 -mx-4 px-4">
-        <button
-          onClick={() => handleFilterChange(false, undefined)}
-          className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors
-            ${!unreadOnly
-              ? 'bg-accent/20 text-accent border border-accent/30'
-              : 'text-gray-400 hover:text-gray-200'}`}
+        {VIEWS.map((v) => (
+          <button
+            key={v.key}
+            onClick={() => reset(setView)(v.key)}
+            className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors
+              ${view === v.key
+                ? 'bg-accent/20 text-accent border border-accent/30'
+                : 'text-gray-400 hover:text-gray-200'}`}
+          >
+            {v.label}
+          </button>
+        ))}
+
+        <span className="w-px h-5 bg-bg-border mx-1 hidden sm:block" />
+
+        {/* Score floor. Debounce isn't needed — onChange only fires on release
+            for range inputs in every browser we target. */}
+        <label className="hidden sm:flex items-center gap-2 text-xs text-gray-400">
+          min
+          <input
+            type="range"
+            min={0}
+            max={9.5}
+            step={0.5}
+            value={minScore ?? 5}
+            onChange={(e) => reset(setMinScore)(parseFloat(e.target.value))}
+            className="w-24 accent-accent"
+          />
+          <span className="text-accent font-semibold tabular-nums w-6">
+            {(minScore ?? 5).toFixed(1)}
+          </span>
+        </label>
+
+        <span className="w-px h-5 bg-bg-border mx-1 hidden sm:block" />
+
+        <select
+          value={sort}
+          onChange={(e) => reset(setSort)(e.target.value)}
+          className="input-field w-auto text-xs py-1.5"
         >
-          All
-        </button>
-        <button
-          onClick={() => handleFilterChange(true, undefined)}
-          className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors
-            ${unreadOnly
-              ? 'bg-accent/20 text-accent border border-accent/30'
-              : 'text-gray-400 hover:text-gray-200'}`}
-        >
-          Unread
-        </button>
+          <option value="score">Sort: Score</option>
+          <option value="newest">Sort: Newest</option>
+        </select>
 
         {feeds && feeds.length > 0 && (
           <select
             value={feedId}
-            onChange={(e) => handleFilterChange(undefined, e.target.value)}
+            onChange={(e) => reset(setFeedId)(e.target.value)}
             className="ml-auto input-field w-auto text-xs py-1.5"
           >
             <option value="">All sources</option>
@@ -111,6 +155,13 @@ export default function Home() {
           </select>
         )}
       </div>
+
+      {data && (
+        <p className="text-xs text-gray-500 mb-3">
+          {data.total} article{data.total === 1 ? '' : 's'} match
+          {minScore > 0 && <> at score {minScore.toFixed(1)}+</>}
+        </p>
+      )}
 
       {/* Article list */}
       {isLoading ? (

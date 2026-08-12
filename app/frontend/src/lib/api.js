@@ -35,6 +35,9 @@ export const markRead = (id) =>
 export const setFeedback = (id, rating) =>
   request(`/articles/${id}/feedback?rating=${encodeURIComponent(rating)}`, { method: 'POST' })
 
+export const summarizeArticle = (id, refresh = false) =>
+  request(`/articles/${id}/summarize${refresh ? '?refresh=true' : ''}`, { method: 'POST' })
+
 // Feeds
 export const getFeeds = () => request('/feeds')
 

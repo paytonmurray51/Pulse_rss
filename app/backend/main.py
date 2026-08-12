@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from database import engine, Base
+from database import engine, Base, run_migrations
 from scheduler import start_scheduler, shutdown_scheduler
 from routers import feeds, articles, interests, blocks
 
@@ -23,6 +23,7 @@ logging.basicConfig(
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await run_migrations(conn)
     start_scheduler()
     yield
     shutdown_scheduler()

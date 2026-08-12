@@ -57,6 +57,21 @@ class Base(DeclarativeBase):
     pass
 
 
+# create_all() creates missing tables but never alters existing ones, so
+# columns added after a deploy have to be applied by hand. These are written
+# to be safe to run on every startup.
+_MIGRATIONS = (
+    "ALTER TABLE articles ADD COLUMN IF NOT EXISTS ai_full_summary TEXT",
+    "ALTER TABLE articles ADD COLUMN IF NOT EXISTS ai_full_summary_at TIMESTAMPTZ",
+)
+
+
+async def run_migrations(conn):
+    from sqlalchemy import text
+    for statement in _MIGRATIONS:
+        await conn.execute(text(statement))
+
+
 async def get_db():
     async with AsyncSessionLocal() as session:
         try:
