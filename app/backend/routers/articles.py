@@ -11,7 +11,11 @@ from database import AsyncSessionLocal, get_db
 from models import Article, Feed, FeedbackBlock, UserProfile
 from schemas import ArticleListResponse, ArticleOut, StatsOut, SummaryOut
 from services.article_reader import ArticleUnreadable, fetch_article_text
-from services.claude_service import process_new_articles, summarize_article
+from services.claude_service import (
+    explain_anthropic_error,
+    process_new_articles,
+    summarize_article,
+)
 from services.rss_fetcher import fetch_feed
 
 logger = logging.getLogger(__name__)
@@ -131,8 +135,16 @@ async def _run_full_refresh(session_factory=None):
 
             blocked_topics_lower = [t.lower() for t in feedback_ctx.get("blocked_topics", [])]
 
+            deferred = 0
             for article in loaded_articles:
-                score_data = scores.get(article.url, {})
+                score_data = scores.get(article.url)
+                if score_data is None:
+                    # Never scored (API unavailable). Leave ai_processed False
+                    # so the next refresh retries it. Marking it done here
+                    # would freeze a fabricated score permanently, since
+                    # refreshes skip URLs that already exist.
+                    deferred += 1
+                    continue
                 article.ai_score = score_data.get("ai_score", 5.0)
                 article.ai_summary = score_data.get("ai_summary")
                 article.ai_tags = score_data.get("ai_tags", [])
@@ -149,7 +161,14 @@ async def _run_full_refresh(session_factory=None):
                         break
 
             await db.commit()
-            logger.info(f"Refresh complete: {len(loaded_articles)} new articles processed")
+            scored = len(loaded_articles) - deferred
+            if deferred:
+                logger.warning(
+                    "Refresh complete: %d scored, %d deferred for retry (scoring unavailable)",
+                    scored, deferred,
+                )
+            else:
+                logger.info("Refresh complete: %d new articles processed", scored)
 
         except Exception as e:
             logger.error(f"Error during full refresh: {e}", exc_info=True)
@@ -328,11 +347,18 @@ async def summarize(
     try:
         summary = await summarize_article(article.title, text, interests)
     except Exception as e:
+        reason = explain_anthropic_error(e)
         logger.error("Summarization failed for article %s: %s", article.id, e)
-        raise HTTPException(
-            status_code=502,
-            detail="The summarizer failed on this article. Try again in a moment.",
-        )
+        # 503 for states no retry can fix (billing, bad key); 429 passes the
+        # rate limit through; 502 for everything else.
+        lowered = reason.lower()
+        if "credit balance" in lowered or "rejected" in lowered or "lacks permission" in lowered:
+            status = 503
+        elif "rate limited" in lowered:
+            status = 429
+        else:
+            status = 502
+        raise HTTPException(status_code=status, detail=reason)
 
     # Computed here rather than asked of the model, which guesses badly at it.
     summary["reading_time_min"] = max(1, round(word_count / 200))

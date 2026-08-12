@@ -8,6 +8,45 @@ logger = logging.getLogger(__name__)
 
 _client = anthropic.Anthropic()
 
+
+class ClaudeUnavailable(Exception):
+    """The Anthropic API refused the request or could not be reached.
+
+    Distinct from a malformed response: this means no usable answer exists
+    yet, so the caller should retry later rather than persist a fallback.
+    """
+
+
+def explain_anthropic_error(exc: Exception) -> str:
+    """Turn an SDK exception into something actionable for a human.
+
+    A generic 'try again' is actively misleading for billing and auth
+    failures, where retrying can never succeed.
+    """
+    message = str(exc)
+    lowered = message.lower()
+
+    if "credit balance is too low" in lowered or "plans & billing" in lowered:
+        return (
+            "Anthropic credit balance is too low. Add credits at "
+            "console.anthropic.com under Plans & Billing."
+        )
+
+    status = (
+        getattr(getattr(exc, "response", None), "status_code", None)
+        or getattr(exc, "status_code", None)
+    )
+    if status == 401:
+        return "ANTHROPIC_API_KEY was rejected — it may be invalid or revoked."
+    if status == 403:
+        return "The Anthropic API key lacks permission for this model."
+    if status == 429:
+        return "Rate limited by the Anthropic API. Try again in a minute."
+    if status in (500, 502, 503, 529):
+        return "The Anthropic API is temporarily unavailable. Try again shortly."
+
+    return f"Anthropic API error: {message}"
+
 SYSTEM_PROMPT = """You are a personal content curator. For each article provided, score and evaluate it.
 
 You MUST respond ONLY with a valid JSON array — no markdown, no code fences, no explanation.
@@ -127,6 +166,8 @@ Articles to evaluate:
 
 Respond with ONLY the JSON array."""
 
+    # A failed call means no answer exists yet — raise so the caller can defer
+    # these articles instead of freezing a fabricated 5.0 into the database.
     try:
         response = _client.messages.create(
             model="claude-haiku-4-5",
@@ -134,16 +175,20 @@ Respond with ONLY the JSON array."""
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_message}],
         )
-        raw = response.content[0].text.strip()
-
-        # Strip markdown fences if present
-        raw = re.sub(r"^```[a-z]*\n?", "", raw)
-        raw = re.sub(r"\n?```$", "", raw)
-        raw = raw.strip()
-
-        return json.loads(raw)
     except Exception as e:
-        logger.error(f"Claude scoring error: {e}")
+        raise ClaudeUnavailable(explain_anthropic_error(e)) from e
+
+    raw = response.content[0].text.strip()
+    raw = re.sub(r"^```[a-z]*\n?", "", raw)
+    raw = re.sub(r"\n?```$", "", raw)
+    raw = raw.strip()
+
+    # A malformed reply is different: the model did answer, so neutral scores
+    # are a fair fallback and the articles are genuinely done being tried.
+    try:
+        return json.loads(raw)
+    except (ValueError, TypeError) as e:
+        logger.error("Could not parse scoring response, using neutral scores: %s", e)
         return [
             {
                 "index": a["index"],
@@ -180,7 +225,17 @@ async def process_new_articles(
             for i, a in enumerate(batch)
         ]
 
-        scores = await score_articles(payload, interests, feedback_ctx)
+        try:
+            scores = await score_articles(payload, interests, feedback_ctx)
+        except ClaudeUnavailable as e:
+            # Whatever broke this batch will break the rest, so stop and
+            # return what succeeded. Omitted articles stay unprocessed and
+            # get retried on the next refresh.
+            logger.error(
+                "Scoring unavailable after %d/%d articles — deferring the rest: %s",
+                len(results), len(articles), e,
+            )
+            break
 
         score_map = {s["index"]: s for s in scores}
         for i, article in enumerate(batch):
