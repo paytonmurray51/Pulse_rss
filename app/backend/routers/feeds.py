@@ -2,8 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from auth import get_admin_user, get_current_user
 from database import get_db
-from models import Feed, Article
+from models import Feed, Article, User
 from schemas import FeedCreate, FeedOut, FeedUpdate
 from services.rss_fetcher import detect_feed_type, resolve_youtube_channel_to_feed_url
 
@@ -11,7 +12,10 @@ router = APIRouter()
 
 
 @router.get("", response_model=list[FeedOut])
-async def list_feeds(db: AsyncSession = Depends(get_db)):
+async def list_feeds(
+    _user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     count_subq = (
         select(Article.feed_id, func.count(Article.id).label("article_count"))
         .group_by(Article.feed_id)
@@ -32,7 +36,11 @@ async def list_feeds(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("", response_model=FeedOut, status_code=201)
-async def create_feed(payload: FeedCreate, db: AsyncSession = Depends(get_db)):
+async def create_feed(
+    payload: FeedCreate,
+    _user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     feed_url = payload.url.strip()
     feed_type = detect_feed_type(feed_url)
 
@@ -65,6 +73,7 @@ async def create_feed(payload: FeedCreate, db: AsyncSession = Depends(get_db)):
 async def update_feed(
     feed_id: int,
     payload: FeedUpdate,
+    _admin: User = Depends(get_admin_user),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Feed).where(Feed.id == feed_id))
@@ -94,7 +103,11 @@ async def update_feed(
 
 
 @router.delete("/{feed_id}", status_code=204)
-async def delete_feed(feed_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_feed(
+    feed_id: int,
+    _admin: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
     result = await db.execute(select(Feed).where(Feed.id == feed_id))
     feed = result.scalar_one_or_none()
     if not feed:

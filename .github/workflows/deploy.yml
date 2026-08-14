@@ -62,6 +62,12 @@ jobs:
             -var="image_tag=${{ steps.tag.outputs.IMAGE_TAG }}" \
             -var="anthropic_api_key=${{ secrets.ANTHROPIC_API_KEY }}" \
             -var="db_password=${{ secrets.PULSE_DB_PASSWORD }}" \
+            -var="owner_email=${{ secrets.OWNER_EMAIL }}" \
+            -var="google_client_id=${{ secrets.GOOGLE_CLIENT_ID }}" \
+            -var="google_client_secret=${{ secrets.GOOGLE_CLIENT_SECRET }}" \
+            -var="session_secret=${{ secrets.SESSION_SECRET }}" \
+            -var="resend_api_key=${{ secrets.RESEND_API_KEY }}" \
+            -var="public_url=${{ secrets.PUBLIC_URL }}" \
             -out=tfplan
 
       - name: Terraform Apply

@@ -16,3 +16,14 @@ refresh_interval_minutes  = 30
 # Set via -var in CI from GitHub Secrets:
 # anthropic_api_key = "sk-ant-..."
 # db_password       = "..."
+
+# Multi-user auth. owner_email is auto-invited and made admin on first boot.
+owner_email      = "paytonmurray51@gmail.com"
+google_client_id = "1234567890-abcdef.apps.googleusercontent.com"
+public_url       = "https://pulse-748067667101.us-central1.run.app"
+resend_from      = "Pulse <onboarding@resend.dev>"
+
+# Set via -var in CI from GitHub Secrets:
+# google_client_secret = "GOCSPX-..."
+# session_secret       = "<openssl rand -base64 48>"
+# resend_api_key       = "re_..."

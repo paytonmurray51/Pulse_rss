@@ -71,6 +71,12 @@ Create a repository and add the following **Secrets** (Settings → Secrets → 
 | `ARTIFACT_REGISTRY_REPO` | Artifact Registry repo name (e.g. `pulse`) |
 | `ANTHROPIC_API_KEY` | Your Anthropic API key (`sk-ant-...`) |
 | `PULSE_DB_PASSWORD` | Password for the `pulse_user` database user |
+| `OWNER_EMAIL` | Your Google address — auto-invited and made admin |
+| `GOOGLE_CLIENT_ID` | OAuth client ID (`...apps.googleusercontent.com`) |
+| `GOOGLE_CLIENT_SECRET` | OAuth client secret (`GOCSPX-...`) |
+| `SESSION_SECRET` | `openssl rand -base64 48` — changing it signs everyone out |
+| `RESEND_API_KEY` | Resend API key for suggestion emails |
+| `PUBLIC_URL` | Service URL, e.g. `https://pulse-xxxx.run.app` (no trailing slash) |
 
 ## First deploy
 
@@ -83,6 +89,43 @@ git push origin main   # triggers GitHub Actions deploy
 The workflow will:
 1. Build the multi-stage Docker image and push to Artifact Registry
 2. Run `terraform apply` to provision Cloud SQL DB + user, Secret Manager secrets, service account, and Cloud Run service
+
+## Accounts and sign-in
+
+Pulse is invite-only and signs in with Google. The owner is created
+automatically on first boot from `OWNER_EMAIL`; everyone else is invited from
+**Settings → Members**.
+
+Each member gets their own interests, score threshold, blocks, saved items and
+**their own AI scores** — relevance depends on whose interests are being
+matched, so an article can be a 9 for one person and a 2 for another.
+
+### Creating the Google OAuth client
+
+1. Go to console.cloud.google.com → **APIs & Services → OAuth consent screen**
+   - User type **External**, publishing status **Testing** is fine for a family
+   - Add each family Gmail address under **Test users**
+2. **APIs & Services → Credentials → Create credentials → OAuth client ID**
+   - Application type: **Web application**
+   - Authorised redirect URI: `https://YOUR-SERVICE-URL/api/auth/callback`
+     (must match `PUBLIC_URL` exactly — no trailing slash)
+3. Copy the client ID and client secret into GitHub Secrets
+
+### Scoring costs
+
+Scoring runs **on request**: pressing Refresh fetches new articles and scores
+them for whoever pressed it. Nobody is charged for a family member who never
+signs in. An admin can additionally enable a scheduled sync in
+**Settings → Scheduled sync**, which scores for everyone seen in the last 14
+days.
+
+## Suggestions
+
+Any member can send a suggestion from **Settings → Suggest an improvement**.
+It is stored first and emailed to `OWNER_EMAIL` through Resend, so a mail
+outage never loses feedback — failures show as "not emailed" in the admin
+inbox. `onboarding@resend.dev` works without domain verification; set
+`RESEND_FROM` once you verify your own domain.
 
 ## First use
 

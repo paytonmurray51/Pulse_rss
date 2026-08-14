@@ -89,7 +89,41 @@ resource "google_secret_manager_secret_iam_member" "db_password_accessor" {
   member    = "serviceAccount:${google_service_account.pulse_run.email}"
 }
 
+
+# ─── auth & email secrets ────────────────────────────────────────────────────
+
+locals {
+  extra_secrets = {
+    "pulse-google-client-secret" = var.google_client_secret
+    "pulse-session-secret"       = var.session_secret
+    "pulse-resend-api-key"       = var.resend_api_key
+  }
+}
+
+resource "google_secret_manager_secret" "extra" {
+  for_each  = local.extra_secrets
+  secret_id = each.key
+
+  replication {
+    auto {}
+  }
+}
+
+resource "google_secret_manager_secret_version" "extra" {
+  for_each    = local.extra_secrets
+  secret      = google_secret_manager_secret.extra[each.key].id
+  secret_data = each.value
+}
+
+resource "google_secret_manager_secret_iam_member" "extra_accessor" {
+  for_each  = google_secret_manager_secret.extra
+  secret_id = each.value.secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.pulse_run.email}"
+}
+
 # ─── Cloud Run ───────────────────────────────────────────────────────────────
+
 
 resource "google_cloud_run_v2_service" "pulse" {
   name     = "pulse"
@@ -143,6 +177,27 @@ resource "google_cloud_run_v2_service" "pulse" {
       }
 
       env {
+        name  = "OWNER_EMAIL"
+        value = var.owner_email
+      }
+
+      env {
+        name  = "GOOGLE_CLIENT_ID"
+        value = var.google_client_id
+      }
+
+      # Must match the Cloud Run URL exactly; it builds the OAuth redirect.
+      env {
+        name  = "PUBLIC_URL"
+        value = var.public_url
+      }
+
+      env {
+        name  = "RESEND_FROM"
+        value = var.resend_from
+      }
+
+      env {
         name = "ANTHROPIC_API_KEY"
         value_source {
           secret_key_ref {
@@ -158,6 +213,23 @@ resource "google_cloud_run_v2_service" "pulse" {
           secret_key_ref {
             secret  = google_secret_manager_secret.db_password.secret_id
             version = "latest"
+          }
+        }
+      }
+
+      dynamic "env" {
+        for_each = {
+          GOOGLE_CLIENT_SECRET = "pulse-google-client-secret"
+          SESSION_SECRET       = "pulse-session-secret"
+          RESEND_API_KEY       = "pulse-resend-api-key"
+        }
+        content {
+          name = env.key
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.extra[env.value].secret_id
+              version = "latest"
+            }
           }
         }
       }
@@ -178,6 +250,7 @@ resource "google_cloud_run_v2_service" "pulse" {
   }
 
   depends_on = [
+    google_secret_manager_secret_iam_member.extra_accessor,
     google_secret_manager_secret_iam_member.anthropic_accessor,
     google_secret_manager_secret_iam_member.db_password_accessor,
     google_project_iam_member.pulse_sql_client,

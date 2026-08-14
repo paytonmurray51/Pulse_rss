@@ -2,65 +2,75 @@ const BASE = '/api'
 
 async function request(path, options = {}) {
   const res = await fetch(`${BASE}${path}`, {
+    // Session lives in an HttpOnly cookie, so every call must send it.
+    credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json', ...options.headers },
     ...options,
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new Error(err.detail || res.statusText)
+    const error = new Error(err.detail || res.statusText)
+    error.status = res.status
+    throw error
   }
   if (res.status === 204) return null
   return res.json()
 }
 
-// Articles
-export const getArticles = (params = {}) => {
-  const qs = new URLSearchParams(
+const qs = (params) =>
+  new URLSearchParams(
     Object.fromEntries(Object.entries(params).filter(([, v]) => v != null && v !== ''))
   ).toString()
-  return request(`/articles${qs ? `?${qs}` : ''}`)
+
+// Auth
+export const getMe = () => request('/auth/me')
+export const getAuthConfig = () => request('/auth/config')
+
+// Articles
+export const getArticles = (params = {}) => {
+  const q = qs(params)
+  return request(`/articles${q ? `?${q}` : ''}`)
 }
-
 export const getStats = () => request('/articles/stats')
-
-export const refreshFeeds = () =>
-  request('/articles/refresh', { method: 'POST' })
-
-export const toggleReadLater = (id) =>
-  request(`/articles/${id}/read-later`, { method: 'POST' })
-
-export const markRead = (id) =>
-  request(`/articles/${id}/read`, { method: 'POST' })
-
+export const refreshFeeds = () => request('/articles/refresh', { method: 'POST' })
+export const toggleReadLater = (id) => request(`/articles/${id}/read-later`, { method: 'POST' })
+export const markRead = (id) => request(`/articles/${id}/read`, { method: 'POST' })
 export const setFeedback = (id, rating) =>
   request(`/articles/${id}/feedback?rating=${encodeURIComponent(rating)}`, { method: 'POST' })
-
 export const summarizeArticle = (id, refresh = false) =>
   request(`/articles/${id}/summarize${refresh ? '?refresh=true' : ''}`, { method: 'POST' })
 
 // Feeds
 export const getFeeds = () => request('/feeds')
-
-export const createFeed = (data) =>
-  request('/feeds', { method: 'POST', body: JSON.stringify(data) })
-
+export const createFeed = (data) => request('/feeds', { method: 'POST', body: JSON.stringify(data) })
 export const updateFeed = (id, data) =>
   request(`/feeds/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+export const deleteFeed = (id) => request(`/feeds/${id}`, { method: 'DELETE' })
 
-export const deleteFeed = (id) =>
-  request(`/feeds/${id}`, { method: 'DELETE' })
-
-// Profile
+// Profile & instance settings
 export const getProfile = () => request('/interests')
-
 export const updateProfile = (data) =>
   request('/interests', { method: 'PUT', body: JSON.stringify(data) })
+export const getAppSettings = () => request('/interests/app-settings')
+export const updateAppSettings = (data) =>
+  request('/interests/app-settings', { method: 'PUT', body: JSON.stringify(data) })
 
 // Blocks
 export const getBlocks = () => request('/blocks')
+export const createBlock = (data) => request('/blocks', { method: 'POST', body: JSON.stringify(data) })
+export const deleteBlock = (id) => request(`/blocks/${id}`, { method: 'DELETE' })
 
-export const createBlock = (data) =>
-  request('/blocks', { method: 'POST', body: JSON.stringify(data) })
+// Members (admin)
+export const getMembers = () => request('/members')
+export const inviteMember = (data) =>
+  request('/members', { method: 'POST', body: JSON.stringify(data) })
+export const revokeMember = (email) =>
+  request(`/members/${encodeURIComponent(email)}`, { method: 'DELETE' })
 
-export const deleteBlock = (id) =>
-  request(`/blocks/${id}`, { method: 'DELETE' })
+// Suggestions
+export const submitSuggestion = (message) =>
+  request('/suggestions', { method: 'POST', body: JSON.stringify({ message }) })
+export const getSuggestions = (includeResolved = false) =>
+  request(`/suggestions?include_resolved=${includeResolved}`)
+export const resolveSuggestion = (id) =>
+  request(`/suggestions/${id}/resolve`, { method: 'POST' })

@@ -1,14 +1,16 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getStats } from './lib/api'
+import { AuthProvider, useAuth } from './lib/auth'
 import TopBar from './components/TopBar'
 import { BottomNav, Sidebar } from './components/Nav'
 import Home from './pages/Home'
 import Saved from './pages/Saved'
 import Feeds from './pages/Feeds'
 import Settings from './pages/Settings'
+import Login from './pages/Login'
 
-function Layout() {
+function Shell() {
   const queryClient = useQueryClient()
   const { data: stats } = useQuery({
     queryKey: ['stats'],
@@ -32,6 +34,7 @@ function Layout() {
             <Route path="/saved" element={<Saved />} />
             <Route path="/feeds" element={<Feeds />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
         <BottomNav />
@@ -40,10 +43,34 @@ function Layout() {
   )
 }
 
+function Gate() {
+  const { user, isLoading } = useAuth()
+  const location = useLocation()
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-sm text-gray-500">
+        Loading…
+      </div>
+    )
+  }
+
+  if (!user) {
+    // /login renders itself; everything else bounces there.
+    return location.pathname === '/login'
+      ? <Login />
+      : <Navigate to="/login" replace />
+  }
+
+  return location.pathname === '/login' ? <Navigate to="/" replace /> : <Shell />
+}
+
 export default function App() {
   return (
     <BrowserRouter>
-      <Layout />
+      <AuthProvider>
+        <Gate />
+      </AuthProvider>
     </BrowserRouter>
   )
 }

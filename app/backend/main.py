@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 from database import engine, Base, run_migrations
 from scheduler import start_scheduler, shutdown_scheduler
-from routers import feeds, articles, interests, blocks
+from routers import articles, auth, blocks, feeds, interests, members, suggestions
 
 # Without this, refresh-pipeline logger.info() calls never reach Cloud Run.
 logging.basicConfig(
@@ -32,18 +32,26 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Pulse RSS", lifespan=lifespan)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Session cookies mean requests carry credentials, so a wildcard origin is no
+# longer acceptable. Same-origin needs no entry; extra dev origins can be
+# added through CORS_ORIGINS.
+_origins = [o for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
+if _origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
+app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(feeds.router, prefix="/api/feeds", tags=["feeds"])
 app.include_router(articles.router, prefix="/api/articles", tags=["articles"])
 app.include_router(interests.router, prefix="/api/interests", tags=["interests"])
 app.include_router(blocks.router, prefix="/api/blocks", tags=["blocks"])
+app.include_router(members.router, prefix="/api/members", tags=["members"])
+app.include_router(suggestions.router, prefix="/api/suggestions", tags=["suggestions"])
 
 
 @app.get("/api/health")
@@ -59,5 +67,4 @@ if STATIC_DIR.exists():
     async def spa_fallback(request: Request, full_path: str):
         if full_path.startswith("api/"):
             return JSONResponse({"detail": "Not found"}, status_code=404)
-        index = STATIC_DIR / "index.html"
-        return FileResponse(str(index))
+        return FileResponse(str(STATIC_DIR / "index.html"))

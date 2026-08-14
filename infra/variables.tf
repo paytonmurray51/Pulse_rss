@@ -47,3 +47,42 @@ variable "refresh_interval_minutes" {
   type        = number
   default     = 30
 }
+
+variable "owner_email" {
+  description = "Google address that owns this instance; auto-invited and made admin"
+  type        = string
+}
+
+variable "google_client_id" {
+  description = "OAuth 2.0 client ID from the Google Cloud console"
+  type        = string
+}
+
+variable "google_client_secret" {
+  description = "OAuth 2.0 client secret"
+  type        = string
+  sensitive   = true
+}
+
+variable "session_secret" {
+  description = "Signing key for session cookies. Changing it signs everyone out."
+  type        = string
+  sensitive   = true
+}
+
+variable "resend_api_key" {
+  description = "Resend API key used to email suggestions to the owner"
+  type        = string
+  sensitive   = true
+}
+
+variable "public_url" {
+  description = "Public HTTPS URL of the service; must match the Google OAuth redirect origin"
+  type        = string
+}
+
+variable "resend_from" {
+  description = "From address for suggestion emails"
+  type        = string
+  default     = "Pulse <onboarding@resend.dev>"
+}
