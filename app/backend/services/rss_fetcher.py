@@ -161,47 +161,97 @@ def detect_feed_type(url: str) -> str:
     return "rss"
 
 
-async def resolve_youtube_channel_to_feed_url(url: str) -> str:
-    parsed = urlparse(url)
-    path = parsed.path
+# A channel ID is always "UC" followed by 22 more characters.
+_CHANNEL_ID = r"(UC[A-Za-z0-9_-]{22})"
 
-    # Already an RSS feed URL
+# Ordered by trustworthiness. The channel page advertises its own RSS feed,
+# which is precisely what we want. The JSON blobs near the bottom also name
+# every *other* channel appearing on the page — a recommended video's author
+# would resolve to the wrong feed — so they are last resorts.
+_CHANNEL_ID_PATTERNS = (
+    rf'rel="alternate"[^>]*?channel_id={_CHANNEL_ID}',
+    rf'feeds/videos\.xml\?channel_id={_CHANNEL_ID}',
+    rf'<meta[^>]*?itemprop="(?:identifier|channelId)"[^>]*?content="{_CHANNEL_ID}"',
+    rf'<link[^>]*?rel="canonical"[^>]*?/channel/{_CHANNEL_ID}',
+    rf'"externalId"\s*:\s*"{_CHANNEL_ID}"',
+    rf'"channelId"\s*:\s*"{_CHANNEL_ID}"',
+)
+
+
+def _feed_url(channel_id: str) -> str:
+    return f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
+
+
+def extract_channel_id(html: str) -> Optional[str]:
+    for pattern in _CHANNEL_ID_PATTERNS:
+        match = re.search(pattern, html)
+        if match:
+            return match.group(1)
+    return None
+
+
+async def resolve_youtube_channel_to_feed_url(url: str) -> str:
+    """Turn any YouTube channel URL into its RSS feed URL.
+
+    Handles are resolved by fetching the page and reading the channel ID out
+    of it, since YouTube exposes no public lookup. Each failure mode reports
+    what actually went wrong: a page we could not fetch, a page we could not
+    read, and a URL that was never a channel are three different problems.
+    """
+    path = urlparse(url).path
+
     if "feeds/videos.xml" in url:
         return url
 
-    # /channel/{id}
-    channel_match = re.match(r"/channel/([a-zA-Z0-9_-]+)", path)
-    if channel_match:
-        channel_id = channel_match.group(1)
-        return f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
+    direct = re.match(rf"/channel/{_CHANNEL_ID}", path)
+    if direct:
+        return _feed_url(direct.group(1))
 
-    # /@handle or /user/name
-    handle_match = re.match(r"/(@[^/]+|user/[^/]+|c/[^/]+)", path)
-    if handle_match:
-        headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/120.0.0.0 Safari/537.36"
-            )
-        }
-        async with httpx.AsyncClient(follow_redirects=True, timeout=15.0) as client:
-            try:
-                resp = await client.get(url, headers=headers)
-                resp.raise_for_status()
-                html = resp.text
-                match = re.search(r'"channelId"\s*:\s*"([a-zA-Z0-9_-]+)"', html)
-                if match:
-                    channel_id = match.group(1)
-                    return f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
-            except Exception as e:
-                logger.error(f"Failed to resolve YouTube handle {url}: {e}")
-                raise ValueError(
-                    f"Could not resolve YouTube channel from URL: {url}. "
-                    "Please use the direct /channel/{{id}} URL instead."
-                )
+    # @handle, legacy /c/ and /user/ vanity paths, and the bare /Name form.
+    if not re.match(r"/(@[^/]+|c/[^/]+|user/[^/]+|[A-Za-z0-9_.-]+)/?$", path):
+        raise ValueError(
+            f"That does not look like a YouTube channel URL: {url}. "
+            "Use the channel's main page, e.g. https://www.youtube.com/@SomeChannel"
+        )
 
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        ),
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=20.0) as client:
+            resp = await client.get(url, headers=headers)
+            resp.raise_for_status()
+            html = resp.text
+    except httpx.HTTPStatusError as e:
+        logger.error("YouTube returned %s for %s", e.response.status_code, url)
+        raise ValueError(
+            f"YouTube returned HTTP {e.response.status_code} for that channel. "
+            "Check the URL, or paste the channel's RSS feed directly: "
+            "https://www.youtube.com/feeds/videos.xml?channel_id=UC..."
+        )
+    except Exception as e:
+        logger.error("Could not fetch %s: %s", url, e)
+        raise ValueError(
+            f"Could not reach YouTube to look up that channel ({type(e).__name__}). "
+            "Try again, or paste the channel's RSS feed directly: "
+            "https://www.youtube.com/feeds/videos.xml?channel_id=UC..."
+        )
+
+    channel_id = extract_channel_id(html)
+    if channel_id:
+        logger.info("Resolved %s to channel %s", url, channel_id)
+        return _feed_url(channel_id)
+
+    logger.error("Fetched %s (%d bytes) but found no channel ID", url, len(html))
     raise ValueError(
-        f"Unrecognized YouTube URL format: {url}. "
-        "Use /channel/{{id}} or /@handle format."
+        "Found that YouTube page but couldn't read its channel ID — YouTube may have "
+        "served a consent or bot-check page. Open the channel in a browser, view the "
+        "page source, search for 'channel_id=', and paste the full feed URL: "
+        "https://www.youtube.com/feeds/videos.xml?channel_id=UC..."
     )
