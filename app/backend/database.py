@@ -69,6 +69,40 @@ class Base(DeclarativeBase):
 # migration runs at most once, tracked in schema_migrations, so a step may
 # safely contain one-shot data changes.
 
+async def _column_exists(conn, table: str, column: str) -> bool:
+    return bool((await conn.execute(
+        text(
+            "SELECT count(*) FROM information_schema.columns "
+            "WHERE table_name = :t AND column_name = :c"
+        ),
+        {"t": table, "c": column},
+    )).scalar_one())
+
+
+async def _m002_daily_auto_refresh(conn):
+    """Move an existing install off the old 30-minute cadence.
+
+    Entirely a no-op on a database created after the multi-user split: those
+    refresh columns live on app_settings and were never on user_profiles, so
+    touching them here would abort startup on every fresh install.
+    """
+    if not await _column_exists(conn, "user_profiles", "refresh_interval_minutes"):
+        logger.info("Skipping 002: user_profiles predates this migration's schema")
+        return
+
+    await conn.execute(text(
+        "ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS "
+        "auto_refresh_enabled BOOLEAN NOT NULL DEFAULT TRUE"
+    ))
+    await conn.execute(text(
+        "ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS last_auto_refresh_at TIMESTAMPTZ"
+    ))
+    await conn.execute(text(
+        "UPDATE user_profiles SET refresh_interval_minutes = 1440 "
+        "WHERE refresh_interval_minutes < 1440"
+    ))
+
+
 async def _m003_multi_user(conn):
     """Move a single-user install to per-user accounts, scores and state.
 
@@ -201,17 +235,7 @@ _MIGRATIONS = (
             "ALTER TABLE articles ADD COLUMN IF NOT EXISTS ai_full_summary_at TIMESTAMPTZ",
         ),
     ),
-    (
-        "002_daily_auto_refresh",
-        (
-            "ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS "
-            "auto_refresh_enabled BOOLEAN NOT NULL DEFAULT TRUE",
-            "ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS "
-            "last_auto_refresh_at TIMESTAMPTZ",
-            "UPDATE user_profiles SET refresh_interval_minutes = 1440 "
-            "WHERE refresh_interval_minutes < 1440",
-        ),
-    ),
+    ("002_daily_auto_refresh", _m002_daily_auto_refresh),
     ("003_multi_user", _m003_multi_user),
 )
 

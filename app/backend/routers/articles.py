@@ -219,11 +219,10 @@ async def list_articles(
         query = query.where(ArticleScore.ai_filtered == False)
     if feed_id is not None:
         query = query.where(Article.feed_id == feed_id)
-    if category is not None:
-        feed_ids = [r[0] for r in (
-            await db.execute(select(Feed.id).where(Feed.category == category))
-        ).all()]
-        query = query.where(Article.feed_id.in_(feed_ids))
+    if category:
+        query = query.where(Article.feed_id.in_(
+            select(Feed.id).where(Feed.category == category)
+        ))
     if read_later is True:
         query = query.where(ArticleState.read_later == True)
     if unread_only:

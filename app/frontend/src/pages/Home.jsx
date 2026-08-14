@@ -28,6 +28,7 @@ const VIEWS = [
 export default function Home() {
   const [page, setPage] = useState(1)
   const [view, setView] = useState('all')
+  const [category, setCategory] = useState('')
   const [feedId, setFeedId] = useState('')
   const [sort, setSort] = useState('score')
   const [minScore, setMinScore] = useState(null)
@@ -48,6 +49,9 @@ export default function Home() {
     per_page: 20,
     unread_only: view === 'unread' || undefined,
     read_later: view === 'saved' || undefined,
+    // A source is more specific than its category, so sending both would be
+    // redundant at best and contradictory at worst.
+    category: !feedId ? category || undefined : undefined,
     feed_id: feedId || undefined,
     sort,
     min_score: minScore ?? undefined,
@@ -63,6 +67,12 @@ export default function Home() {
     queryKey: ['feeds'],
     queryFn: getFeeds,
   })
+
+  const categories = [...new Set((feeds ?? []).map((f) => f.category).filter(Boolean))].sort()
+  // Narrow the source list to the chosen category so the two controls agree.
+  const visibleFeeds = category
+    ? (feeds ?? []).filter((f) => f.category === category)
+    : (feeds ?? [])
 
   const totalPages = data ? Math.ceil(data.total / data.per_page) : 1
 
@@ -95,7 +105,7 @@ export default function Home() {
       {/* Filter bar. `top-0`, not an offset for the TopBar: <main> is the
           scrolling container and the TopBar sits outside it, so a non-zero
           offset would leave a gap that article cards scroll through. */}
-      <div className="sticky top-0 z-20 flex items-center gap-2 py-2
+      <div className="sticky top-0 z-20 flex flex-wrap items-center gap-2 py-2
                      bg-bg-base/95 backdrop-blur border-b border-bg-border
                      mb-4 -mx-4 px-4">
         {VIEWS.map((v) => (
@@ -142,14 +152,40 @@ export default function Home() {
           <option value="newest">Sort: Newest</option>
         </select>
 
-        {feeds && feeds.length > 0 && (
+        {categories.length > 0 && (
+          <select
+            value={category}
+            onChange={(e) => {
+              const next = e.target.value
+              reset(setCategory)(next)
+              // Clear a source that no longer belongs to the chosen category,
+              // otherwise the feed would silently show nothing.
+              if (next && feedId) {
+                const stillVisible = (feeds ?? []).some(
+                  (f) => String(f.id) === String(feedId) && f.category === next
+                )
+                if (!stillVisible) setFeedId('')
+              }
+            }}
+            className="ml-auto input-field w-auto text-xs py-1.5"
+          >
+            <option value="">All categories</option>
+            {categories.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        )}
+
+        {visibleFeeds.length > 0 && (
           <select
             value={feedId}
             onChange={(e) => reset(setFeedId)(e.target.value)}
-            className="ml-auto input-field w-auto text-xs py-1.5"
+            className={`input-field w-auto text-xs py-1.5 ${categories.length ? '' : 'ml-auto'}`}
           >
-            <option value="">All sources</option>
-            {feeds.map((f) => (
+            <option value="">
+              {category ? `All ${category} sources` : 'All sources'}
+            </option>
+            {visibleFeeds.map((f) => (
               <option key={f.id} value={f.id}>{f.name}</option>
             ))}
           </select>
@@ -158,8 +194,9 @@ export default function Home() {
 
       {data && (
         <p className="text-xs text-gray-500 mb-3">
-          {data.total} article{data.total === 1 ? '' : 's'} match
-          {minScore > 0 && <> at score {minScore.toFixed(1)}+</>}
+          {data.total} article{data.total === 1 ? '' : 's'}
+          {category && <> in {category}</>}
+          {minScore > 0 && <> scoring {minScore.toFixed(1)}+</>}
         </p>
       )}
 
