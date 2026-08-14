@@ -178,6 +178,12 @@ _CHANNEL_ID_PATTERNS = (
 )
 
 
+# Google serves a consent interstitial instead of the page unless one of
+# these is present. The interstitial contains no channel ID, which is the most
+# likely reason a handle silently fails to resolve from a server.
+_CONSENT_COOKIES = {"CONSENT": "YES+", "SOCS": "CAI"}
+
+
 def _feed_url(channel_id: str) -> str:
     return f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
 
@@ -188,6 +194,32 @@ def extract_channel_id(html: str) -> Optional[str]:
         if match:
             return match.group(1)
     return None
+
+
+def describe_page(html: str) -> str:
+    """One-line description of a page we failed to read.
+
+    Without this, a resolution failure is indistinguishable from any other in
+    the logs; with it, a consent wall or bot check announces itself.
+    """
+    title_match = re.search(r"<title[^>]*>(.*?)</title>", html, re.I | re.S)
+    title = (title_match.group(1).strip()[:80] if title_match else "no <title>")
+    lowered = html[:4000].lower()
+    if "before you continue" in lowered or "consent.youtube" in lowered:
+        kind = "consent wall"
+    elif "captcha" in lowered or "unusual traffic" in lowered:
+        kind = "bot check"
+    elif len(html) < 20_000:
+        kind = "suspiciously small"
+    else:
+        kind = "unrecognised"
+    return f"{kind}, {len(html)} bytes, title={title!r}"
+
+
+def _with_locale(url: str) -> str:
+    """Pin language and region so we get a predictable page shape."""
+    separator = "&" if "?" in url else "?"
+    return f"{url}{separator}hl=en&gl=US"
 
 
 async def resolve_youtube_channel_to_feed_url(url: str) -> str:
@@ -221,37 +253,45 @@ async def resolve_youtube_channel_to_feed_url(url: str) -> str:
             "Chrome/120.0.0.0 Safari/537.36"
         ),
         "Accept-Language": "en-US,en;q=0.9",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     }
 
-    try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=20.0) as client:
-            resp = await client.get(url, headers=headers)
-            resp.raise_for_status()
-            html = resp.text
-    except httpx.HTTPStatusError as e:
-        logger.error("YouTube returned %s for %s", e.response.status_code, url)
-        raise ValueError(
-            f"YouTube returned HTTP {e.response.status_code} for that channel. "
-            "Check the URL, or paste the channel's RSS feed directly: "
-            "https://www.youtube.com/feeds/videos.xml?channel_id=UC..."
-        )
-    except Exception as e:
-        logger.error("Could not fetch %s: %s", url, e)
-        raise ValueError(
-            f"Could not reach YouTube to look up that channel ({type(e).__name__}). "
-            "Try again, or paste the channel's RSS feed directly: "
-            "https://www.youtube.com/feeds/videos.xml?channel_id=UC..."
-        )
+    base = url.rstrip("/")
+    # The main page is the fast path; /about is a much smaller page that still
+    # carries the canonical channel link, and sometimes survives when the
+    # full channel render does not.
+    candidates = [_with_locale(base), _with_locale(f"{base}/about")]
 
-    channel_id = extract_channel_id(html)
-    if channel_id:
-        logger.info("Resolved %s to channel %s", url, channel_id)
-        return _feed_url(channel_id)
+    last_problem = "no attempt succeeded"
 
-    logger.error("Fetched %s (%d bytes) but found no channel ID", url, len(html))
+    async with httpx.AsyncClient(
+        follow_redirects=True, timeout=20.0, cookies=_CONSENT_COOKIES
+    ) as client:
+        for candidate in candidates:
+            try:
+                resp = await client.get(candidate, headers=headers)
+            except Exception as e:
+                last_problem = f"{type(e).__name__} fetching {candidate}"
+                logger.warning("YouTube lookup failed: %s", last_problem)
+                continue
+
+            if resp.status_code != 200:
+                last_problem = f"HTTP {resp.status_code} from {candidate}"
+                logger.warning("YouTube lookup failed: %s", last_problem)
+                continue
+
+            channel_id = extract_channel_id(resp.text)
+            if channel_id:
+                logger.info("Resolved %s to channel %s", url, channel_id)
+                return _feed_url(channel_id)
+
+            last_problem = f"{candidate} gave {describe_page(resp.text)}"
+            logger.warning("YouTube lookup found no channel ID: %s", last_problem)
+
+    logger.error("Could not resolve %s — %s", url, last_problem)
     raise ValueError(
-        "Found that YouTube page but couldn't read its channel ID — YouTube may have "
-        "served a consent or bot-check page. Open the channel in a browser, view the "
-        "page source, search for 'channel_id=', and paste the full feed URL: "
+        "Couldn't look up that channel automatically — YouTube didn't return a page "
+        "we could read. Open the channel in a browser, view source, search for "
+        "'channel_id=', and paste that feed URL instead: "
         "https://www.youtube.com/feeds/videos.xml?channel_id=UC..."
     )
