@@ -97,6 +97,9 @@ class ArticleListResponse(BaseModel):
     # leaving the reader to guess. Zero cost on a normal page load.
     unscored_here: int = 0
     hidden_here: int = 0
+    # Set when scoring is failing, so an empty feed can say why rather than
+    # implying the backlog is merely waiting its turn.
+    score_error: Optional[str] = None
 
 
 class SummaryOut(BaseModel):
@@ -113,6 +116,7 @@ class RefreshResult(BaseModel):
     scored: int
     deferred: int
     message: str
+    error: Optional[str] = None
 
 
 # ─── profile & settings ──────────────────────────────────────────────────────
@@ -154,6 +158,7 @@ class StatsOut(BaseModel):
     avg_score: Optional[float] = None
     articles_today: int
     unscored_articles: int = 0
+    last_score_error: Optional[str] = None
 
 
 class BlockCreate(BaseModel):

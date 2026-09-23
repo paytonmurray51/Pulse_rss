@@ -209,8 +209,15 @@ async def process_new_articles(
     interests: list[str],
     feedback_ctx: dict,
     batch_size: int = 10,
-) -> dict:
+) -> tuple[dict, str | None]:
+    """Score articles in batches.
+
+    Returns (results, error). The error is the reason scoring stopped, so the
+    caller can show it rather than reporting a silent deferral — a failure
+    nobody can see is indistinguishable from a queue that is merely slow.
+    """
     results: dict = {}
+    error: str | None = None
 
     for batch_start in range(0, len(articles), batch_size):
         batch = articles[batch_start: batch_start + batch_size]
@@ -231,6 +238,7 @@ async def process_new_articles(
             # Whatever broke this batch will break the rest, so stop and
             # return what succeeded. Omitted articles stay unprocessed and
             # get retried on the next refresh.
+            error = str(e)
             logger.error(
                 "Scoring unavailable after %d/%d articles — deferring the rest: %s",
                 len(results), len(articles), e,
@@ -249,4 +257,4 @@ async def process_new_articles(
                 "ai_processed": True,
             }
 
-    return results
+    return results, error

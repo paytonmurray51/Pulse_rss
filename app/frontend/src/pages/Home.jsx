@@ -33,6 +33,23 @@ const VIEWS = [
 function EmptyFeed({ data, minScore, onClearScore }) {
   const unscored = data?.unscored_here ?? 0
   const hidden = data?.hidden_here ?? 0
+  const scoreError = data?.score_error
+
+  // A backlog that is failing looks identical to one that is merely queued.
+  // Saying "press Refresh" to someone whose API key is out of credit sends
+  // them in a circle, so lead with the cause whenever we know it.
+  if (unscored > 0 && scoreError) {
+    return (
+      <div className="text-center text-gray-500 py-20 px-4">
+        <p className="text-lg font-display text-score-low">Scoring is failing</p>
+        <p className="text-sm mt-3 max-w-md mx-auto text-gray-300">{scoreError}</p>
+        <p className="text-xs mt-3 max-w-md mx-auto">
+          {unscored} article{unscored === 1 ? '' : 's'} here {unscored === 1 ? 'is' : 'are'} waiting.
+          They&apos;ll score automatically once this is resolved — nothing is lost.
+        </p>
+      </div>
+    )
+  }
 
   if (unscored > 0) {
     return (

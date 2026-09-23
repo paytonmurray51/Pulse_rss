@@ -237,6 +237,13 @@ _MIGRATIONS = (
     ),
     ("002_daily_auto_refresh", _m002_daily_auto_refresh),
     ("003_multi_user", _m003_multi_user),
+    (
+        "004_score_error",
+        (
+            "ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS last_score_error VARCHAR(512)",
+            "ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS last_score_error_at TIMESTAMPTZ",
+        ),
+    ),
 )
 
 

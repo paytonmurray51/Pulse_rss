@@ -210,6 +210,12 @@ class UserProfile(Base):
     min_score_threshold: Mapped[float] = mapped_column(
         Float, default=5.0, server_default=text("5.0"), nullable=False
     )
+    # Why scoring last failed for this reader, cleared on the next success.
+    # Logged-only errors are invisible to the person they affect.
+    last_score_error: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    last_score_error_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )

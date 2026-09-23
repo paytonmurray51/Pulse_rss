@@ -123,16 +123,26 @@ async def ingest_feeds(db: AsyncSession) -> int:
     return created
 
 
-async def score_for_user(db: AsyncSession, user: User, limit: int = 200) -> tuple[int, int]:
+async def score_for_user(
+    db: AsyncSession, user: User, limit: int = 200
+) -> tuple[int, int, str | None]:
     """Score everything this reader has no score for yet.
 
-    Returns (scored, deferred). Deferred articles keep no score row at all, so
-    the next run retries them rather than freezing a fabricated value.
+    Returns (scored, deferred, error). Deferred articles keep no score row at
+    all, so the next run retries them rather than freezing a fabricated value.
+    The error, if any, is persisted on the profile so it can be shown later —
+    a failure only ever written to the logs is invisible to the reader.
     """
     profile = (
         await db.execute(select(UserProfile).where(UserProfile.user_id == user.id))
     ).scalar_one_or_none()
-    interests = profile.interests if profile and profile.interests else []
+    if profile is None:
+        # Normally created at sign-in. Without it, scoring would silently run
+        # against empty interests and errors would have nowhere to be stored.
+        profile = UserProfile(user_id=user.id, interests=[], min_score_threshold=5.0)
+        db.add(profile)
+        await db.flush()
+    interests = profile.interests or []
 
     feedback_ctx = await _build_feedback_context(db, user.id)
     blocked_sources = {s.lower() for s in feedback_ctx["blocked_sources"]}
@@ -158,9 +168,15 @@ async def score_for_user(db: AsyncSession, user: User, limit: int = 200) -> tupl
     )).scalars().all()
 
     if not pending:
-        return 0, 0
+        # Nothing left to score means whatever failed before no longer
+        # applies; leaving the old error set would strand a stale warning.
+        if profile.last_score_error:
+            profile.last_score_error = None
+            profile.last_score_error_at = None
+            await db.commit()
+        return 0, 0, None
 
-    scores = await process_new_articles(pending, interests, feedback_ctx)
+    scores, error = await process_new_articles(pending, interests, feedback_ctx)
     blocked_topics = [t.lower() for t in feedback_ctx["blocked_topics"]]
 
     scored = deferred = 0
@@ -187,9 +203,12 @@ async def score_for_user(db: AsyncSession, user: User, limit: int = 200) -> tupl
         )
         scored += 1
 
+    profile.last_score_error = error[:512] if error else None
+    profile.last_score_error_at = datetime.now(timezone.utc) if error else None
+
     await db.commit()
     logger.info("Scored %d for %s (%d deferred)", scored, user.email, deferred)
-    return scored, deferred
+    return scored, deferred, error
 
 
 async def _state_for(db: AsyncSession, article_id: int, user_id: int) -> ArticleState:
@@ -316,10 +335,18 @@ async def list_articles(
             select(func.count()).select_from(hidden.subquery())
         )).scalar_one()
 
+    score_error = None
+    if unscored_here:
+        profile_row = (await db.execute(
+            select(UserProfile).where(UserProfile.user_id == user.id)
+        )).scalar_one_or_none()
+        score_error = profile_row.last_score_error if profile_row else None
+
     return ArticleListResponse(
         items=[_to_out(a, s, st) for a, s, st in rows],
         total=total, page=page, per_page=per_page,
         unscored_here=unscored_here, hidden_here=hidden_here,
+        score_error=score_error,
     )
 
 
@@ -334,16 +361,19 @@ async def refresh_articles(
     actually happened — including why scoring failed.
     """
     new_articles = await ingest_feeds(db)
-    scored, deferred = await score_for_user(db, user)
+    scored, deferred, error = await score_for_user(db, user)
 
     # Scoring is capped per run, so a big batch of new sources needs several
     # passes. Saying "done" while hundreds wait is how a feed looks broken.
     remaining = await count_unscored(db, user.id)
 
     if deferred:
+        # Lead with the cause. "Will be retried" alone reads like patience is
+        # the fix, which is wrong for billing and auth failures.
         message = (
-            f"{new_articles} new, {scored} scored, {deferred} could not be scored — "
-            "they will be retried on the next refresh."
+            f"{deferred} article{'' if deferred == 1 else 's'} could not be scored. "
+            f"{error}" if error else
+            f"{new_articles} new, {scored} scored, {deferred} could not be scored."
         )
     elif remaining:
         message = (
@@ -356,7 +386,8 @@ async def refresh_articles(
         message = "You are up to date — nothing new to score."
 
     return RefreshResult(
-        new_articles=new_articles, scored=scored, deferred=deferred, message=message
+        new_articles=new_articles, scored=scored, deferred=deferred,
+        message=message, error=error,
     )
 
 
@@ -401,6 +432,9 @@ async def get_stats(
     ))).scalar_one()
 
     unscored = await count_unscored(db, user.id)
+    profile_row = (await db.execute(
+        select(UserProfile).where(UserProfile.user_id == user.id)
+    )).scalar_one_or_none()
 
     return StatsOut(
         total_articles=total,
@@ -413,6 +447,7 @@ async def get_stats(
         avg_score=round(float(avg), 1) if avg is not None else None,
         articles_today=today_count,
         unscored_articles=unscored,
+        last_score_error=profile_row.last_score_error if profile_row else None,
     )
 
 
