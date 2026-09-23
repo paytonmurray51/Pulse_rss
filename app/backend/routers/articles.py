@@ -249,9 +249,42 @@ async def list_articles(
         query.order_by(*order).offset((page - 1) * per_page).limit(per_page)
     )).all()
 
+    # An empty feed has several very different causes — nothing ingested,
+    # nothing scored for this reader yet, or everything scored below their
+    # threshold. Work out which, but only when there is nothing to show.
+    unscored_here = hidden_here = 0
+    if total == 0:
+        scope = select(Article.id)
+        if feed_id is not None:
+            scope = scope.where(Article.feed_id == feed_id)
+        if category:
+            scope = scope.where(Article.feed_id.in_(
+                select(Feed.id).where(Feed.category == category)
+            ))
+
+        mine = select(ArticleScore.article_id).where(ArticleScore.user_id == user.id)
+        unscored_here = (await db.execute(
+            select(func.count()).select_from(
+                scope.where(Article.id.notin_(mine)).subquery()
+            )
+        )).scalar_one()
+
+        hidden = (
+            scope.join(ArticleScore, (ArticleScore.article_id == Article.id)
+                       & (ArticleScore.user_id == user.id))
+            .where(
+                (ArticleScore.ai_filtered == True)
+                | (ArticleScore.ai_score < (min_score or 0))
+            )
+        )
+        hidden_here = (await db.execute(
+            select(func.count()).select_from(hidden.subquery())
+        )).scalar_one()
+
     return ArticleListResponse(
         items=[_to_out(a, s, st) for a, s, st in rows],
         total=total, page=page, per_page=per_page,
+        unscored_here=unscored_here, hidden_here=hidden_here,
     )
 
 
@@ -268,10 +301,23 @@ async def refresh_articles(
     new_articles = await ingest_feeds(db)
     scored, deferred = await score_for_user(db, user)
 
+    # Scoring is capped per run, so a big batch of new sources needs several
+    # passes. Saying "done" while hundreds wait is how a feed looks broken.
+    remaining = (await db.execute(
+        select(func.count(Article.id)).where(Article.id.notin_(
+            select(ArticleScore.article_id).where(ArticleScore.user_id == user.id)
+        ))
+    )).scalar_one()
+
     if deferred:
         message = (
             f"{new_articles} new, {scored} scored, {deferred} could not be scored — "
             "they will be retried on the next refresh."
+        )
+    elif remaining:
+        message = (
+            f"{new_articles} new articles, {scored} scored. "
+            f"{remaining} still to score — press Refresh again."
         )
     elif scored:
         message = f"{new_articles} new articles, {scored} scored for you."

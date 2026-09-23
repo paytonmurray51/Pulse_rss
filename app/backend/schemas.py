@@ -93,6 +93,10 @@ class ArticleListResponse(BaseModel):
     total: int
     page: int
     per_page: int
+    # Only computed when total is 0, to explain an empty result rather than
+    # leaving the reader to guess. Zero cost on a normal page load.
+    unscored_here: int = 0
+    hidden_here: int = 0
 
 
 class SummaryOut(BaseModel):

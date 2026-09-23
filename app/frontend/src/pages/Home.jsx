@@ -25,6 +25,56 @@ const VIEWS = [
   { key: 'saved', label: 'Saved' },
 ]
 
+/**
+ * An empty feed has several causes that look identical on screen. The backend
+ * counts them when a result comes back empty, so say which one it is rather
+ * than implying there is nothing to read.
+ */
+function EmptyFeed({ data, minScore, onClearScore }) {
+  const unscored = data?.unscored_here ?? 0
+  const hidden = data?.hidden_here ?? 0
+
+  if (unscored > 0) {
+    return (
+      <div className="text-center text-gray-500 py-20 px-4">
+        <p className="text-lg font-display text-gray-300">Not scored yet</p>
+        <p className="text-sm mt-2 max-w-md mx-auto">
+          {unscored} article{unscored === 1 ? '' : 's'} here {unscored === 1 ? 'is' : 'are'} waiting
+          to be scored for you. Press <span className="text-accent">Refresh</span> — scoring runs in
+          batches, so a large backlog can take a few passes.
+        </p>
+      </div>
+    )
+  }
+
+  if (hidden > 0) {
+    return (
+      <div className="text-center text-gray-500 py-20 px-4">
+        <p className="text-lg font-display text-gray-300">Everything here is filtered out</p>
+        <p className="text-sm mt-2 max-w-md mx-auto">
+          {hidden} article{hidden === 1 ? '' : 's'} scored below your minimum
+          of {(minScore ?? 0).toFixed(1)}, or {hidden === 1 ? 'was' : 'were'} filtered as
+          irrelevant.
+        </p>
+        {minScore > 0 && (
+          <button onClick={onClearScore} className="btn-secondary mt-4">
+            Show them anyway
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="text-center text-gray-500 py-20 px-4">
+      <p className="text-lg font-display text-gray-300">Nothing here</p>
+      <p className="text-sm mt-2">
+        No articles match this filter. Try another source, or press Refresh.
+      </p>
+    </div>
+  )
+}
+
 export default function Home() {
   const [page, setPage] = useState(1)
   const [view, setView] = useState('all')
@@ -206,10 +256,11 @@ export default function Home() {
           {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} />)}
         </div>
       ) : data?.items?.length === 0 ? (
-        <div className="text-center text-gray-500 py-20">
-          <p className="text-lg font-display">No articles yet</p>
-          <p className="text-sm mt-2">Add a feed and click Refresh to get started</p>
-        </div>
+        <EmptyFeed
+          data={data}
+          minScore={minScore}
+          onClearScore={() => reset(setMinScore)(0)}
+        />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {data?.items?.map((article) => (
