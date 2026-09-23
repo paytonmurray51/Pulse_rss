@@ -68,6 +68,32 @@ async def _build_feedback_context(db: AsyncSession, user_id: int) -> dict:
     }
 
 
+async def _blocked_source_names(db: AsyncSession, user_id: int) -> list[str]:
+    rows = await db.execute(
+        select(FeedbackBlock.value).where(
+            FeedbackBlock.user_id == user_id, FeedbackBlock.block_type == "source"
+        )
+    )
+    return [v.lower() for (v,) in rows.all()]
+
+
+async def count_unscored(db: AsyncSession, user_id: int) -> int:
+    """Articles still awaiting a score for this reader.
+
+    Blocked sources are excluded: they are never scored by design, so
+    counting them would leave a backlog that can never reach zero.
+    """
+    query = select(func.count(Article.id)).where(Article.id.notin_(
+        select(ArticleScore.article_id).where(ArticleScore.user_id == user_id)
+    ))
+    blocked = await _blocked_source_names(db, user_id)
+    if blocked:
+        query = query.where(Article.feed_id.notin_(
+            select(Feed.id).where(func.lower(Feed.name).in_(blocked))
+        ))
+    return (await db.execute(query)).scalar_one()
+
+
 async def ingest_feeds(db: AsyncSession) -> int:
     """Fetch every active feed and store new articles. No AI, no reader."""
     feeds = (await db.execute(select(Feed).where(Feed.active == True))).scalars().all()
@@ -112,16 +138,25 @@ async def score_for_user(db: AsyncSession, user: User, limit: int = 200) -> tupl
     blocked_sources = {s.lower() for s in feedback_ctx["blocked_sources"]}
 
     already_scored = select(ArticleScore.article_id).where(ArticleScore.user_id == user.id)
-    pending = (await db.execute(
+
+    pending_q = (
         select(Article)
         .options(selectinload(Article.feed))
         .where(Article.id.notin_(already_scored))
-        .order_by(Article.published_at.desc().nulls_last())
-        .limit(limit)
+    )
+    # Excluded in SQL, before the limit. Filtering these out afterwards let
+    # them occupy slots in every batch: they never get a score row, so they
+    # stay unscored forever and are re-fetched each run. With enough of them
+    # at the top of the ordering, a refresh scored nothing at all.
+    if blocked_sources:
+        pending_q = pending_q.where(Article.feed_id.notin_(
+            select(Feed.id).where(func.lower(Feed.name).in_(blocked_sources))
+        ))
+
+    pending = (await db.execute(
+        pending_q.order_by(Article.published_at.desc().nulls_last()).limit(limit)
     )).scalars().all()
 
-    # Blocked sources never reach the model at all.
-    pending = [a for a in pending if not (a.feed and a.feed.name.lower() in blocked_sources)]
     if not pending:
         return 0, 0
 
@@ -303,11 +338,7 @@ async def refresh_articles(
 
     # Scoring is capped per run, so a big batch of new sources needs several
     # passes. Saying "done" while hundreds wait is how a feed looks broken.
-    remaining = (await db.execute(
-        select(func.count(Article.id)).where(Article.id.notin_(
-            select(ArticleScore.article_id).where(ArticleScore.user_id == user.id)
-        ))
-    )).scalar_one()
+    remaining = await count_unscored(db, user.id)
 
     if deferred:
         message = (
@@ -369,11 +400,7 @@ async def get_stats(
         mine.where(Article.created_at >= today).subquery()
     ))).scalar_one()
 
-    unscored = (await db.execute(
-        select(func.count(Article.id)).where(Article.id.notin_(
-            select(ArticleScore.article_id).where(ArticleScore.user_id == user.id)
-        ))
-    )).scalar_one()
+    unscored = await count_unscored(db, user.id)
 
     return StatsOut(
         total_articles=total,
